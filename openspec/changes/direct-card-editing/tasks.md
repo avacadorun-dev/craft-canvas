@@ -1,0 +1,5 @@
+- [x] Audit original double-click/textarea/blur/Cmd-Enter/Escape behavior.
+- [x] Implement embedded native input and exact submitted-source acknowledgement.
+- [x] Add native event and model acknowledgement/stale/local-history contracts.
+- [ ] Pass exact-source all-platform hosted Rust tests/fmt/strict Clippy.
+- [ ] Qualify host checkpoint/retry/new-card focus/dirty navigation and actual compiled native editing.

@@ -1,0 +1,5 @@
+# Embedded draft and acknowledgement
+
+One editor captures an exact source/session/node and an independent process-local native widget identity. Its text remains noncanonical. The widget renders inside the reserved board body at its effective zoom, using a clipped local scroll region. Native selection, paste, local Undo and composition retain input ownership; board gestures/shortcuts are suppressed while a child owns input. OS blur preserves the draft. Only deliberate same-window pointer blur or Cmd/Ctrl-Enter requests Done; Escape requests local cancellation outside IME.
+
+Submit captures an immutable copy of the exact current text but does not freeze later typing. Acknowledge verifies the same canonical session and the exact submitted node source after host durable-save plus Apply, then advances expected/base without replacing later text or changing the widget ID. Failed/unstarted submissions never become acknowledgements. The host must retain any pending candidate and later draft on failure, and use exact-base checkpoints before claiming autosave. Local text Undo remains distinct from canonical board Undo after editing ends.
