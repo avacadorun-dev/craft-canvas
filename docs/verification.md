@@ -11,3 +11,9 @@ Current status: source scaffolding; no Cargo qualification, native interaction a
 Source3910a16/c356b1e began hosted qualification42483952407. The model library compiled on all three targets; integration test compilation was correctly blocked by missing test-crate documentation. That source is not qualified. The documentation is corrected in the next adapter checkpoint without weakening any test.
 
 The current adapter supplies native camera/grid/culling, click/multiselect/marquee, move/resize previews, typed commit/cancel and clipboard/navigation intents, and a host-mounted native Markdown source-draft component. Its plain example body is deliberately inert text, not a claim of GFM/media rendering. Connector hit/edit/handles, minimap, touch/pressure drawing, shape/frame controls, real media/GFM hosts, complete keyboard/accessibility/IME/native-OS/performance/host acceptance remain pending. No WriterCraft issue is closed by this checkpoint.
+
+## First exact green foundation
+
+Exact source `78f6469bc978d597e603c8de9c7f526e04af2f0b`, hosted run [42487443225](https://github.com/avacadorun-dev/craft-canvas/actions/runs/42487443225), passed committed-lock verification, all26 semantic/native-egui-event tests, rustfmt and strict Clippy on Linux/macOS/Windows with Rust1.97. This proves the foundation contracts only; full Canvas/app/native-OS acceptance remains pending.
+
+The consumer's baseline is Rust1.95, matching egui0.36.2's declared MSRV. The next checkpoint lowers the manifest and hosted exact compiler to1.95.0; the earlier1.97 green does not substitute for that actual qualification.

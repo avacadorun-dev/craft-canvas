@@ -22,8 +22,8 @@ jobs:
           persist-credentials: false
       - name: Install exact supported compiler
         run: |
-          rustup toolchain install 1.97.0 --profile minimal
-          rustup default 1.97.0
+          rustup toolchain install 1.95.0 --profile minimal
+          rustup default 1.95.0
       - name: Resolve only on hosted runner and retain exact identity
         id: metadata
         run: |
@@ -65,14 +65,14 @@ jobs:
           persist-credentials: false
       - name: Install supported Rust checks
         run: |
-          rustup toolchain install 1.97.0 --profile minimal --component rustfmt --component clippy
-          rustup default 1.97.0
+          rustup toolchain install 1.95.0 --profile minimal --component rustfmt --component clippy
+          rustup default 1.95.0
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:
           path: |
             ~/.cargo/registry
             target
-          key: canvas-${{ runner.os }}-${{ runner.arch }}-1.97-${{ hashFiles('Cargo.lock') }}
+          key: canvas-${{ runner.os }}-${{ runner.arch }}-1.95-${{ hashFiles('Cargo.lock') }}
       - name: Check formatting
         run: cargo fmt --all -- --check
       - name: Test semantic and native adapter contracts
