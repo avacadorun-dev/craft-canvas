@@ -64,3 +64,13 @@ The generic adapter SHALL accept valid source-compatible link URLs up to2048enco
 #### Scenario: A valid long legacy link is moved
 - WHEN a preserved link card with a URL over1024characters but within2048bytes is moved and undone
 - THEN the operation succeeds without inventing extension defaults or changing the URL/unknown fields, and Undo restores the exact source record
+
+
+### Requirement: Immediate input during text-card creation
+
+The native adapter SHALL permit one bounded text-card presentation draft before its insertion is acknowledged, without mutating the canonical session. It SHALL keep native widget identity, input, selection, composition and local Undo through exact insertion acknowledgement. Text mutation submission SHALL refuse before acknowledgement. A foreign, stale or different-record acknowledgement SHALL retain the complete draft and refuse promotion.
+
+#### Scenario: A writer immediately types while insertion is pending
+- **WHEN** the host begins insertion and the next frame carries native text before persistence completes
+- **THEN** the provisional card SHALL own that text through the real native input
+- **AND** only the same session's exact next applied record SHALL enable canonical text submission without replacing the later draft

@@ -25,3 +25,8 @@ The source editor's basic Save/Cancel component is intentionally separate from t
 ## ADR005 — history owns raw snapshots, not parsed historical boards
 
 Accepted2026-11-08. Preserve exact immutable raw snapshots in past/future and parse only the chosen Undo/Redo target during preparation. The current source remains separately bounded12MiB and historical source32MiB, for at most44MiB retained encoded source under defaults. This fixes the original foundation's overly conservative charging of parsed historical caches, which could refuse an otherwise valid source Undo slot. Current parsed payload and stable-mapping metadata are measured/reported separately; allocator/container overhead and transient preparation memory are not falsely called zero. Step/node/edge/ID/input limits independently bound those structures. Preparation retains a complete candidate and exact base before host persistence; Apply remains a guarded acknowledgement.
+
+
+## Pending text insertion input
+
+`TextCardEditor::pending_insertion` owns one bounded standalone text record and the ordinary native draft. `CanvasViewHost::pending_text_editor` exposes only that presentation; the view renders it against the exact unchanged canonical session with board interactions frozen. No shadow session or copied graph becomes authoritative. `acknowledge_insertion` requires the same private session, exactly the next revision and byte-identical inserted record. It changes the binding alone, retaining native input identity, later text, selection, composition and Undo. Failed/stale/foreign acknowledgements leave the draft intact; host recovery and persistence remain host-owned. Generic event tests do not establish application/native OS acceptance.

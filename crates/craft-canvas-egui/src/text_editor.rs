@@ -1,10 +1,14 @@
 //! Reusable native Markdown source draft for a host-owned dialog or editor pane.
 use crate::CanvasViewLabels;
 use craft_canvas_model::{
-    CanvasCommand, CanvasError, CanvasSession, CanvasTransaction, ContentIdentity, NodeKind, Result,
+    CanvasCommand, CanvasError, CanvasSession, CanvasTransaction, ContentIdentity, NodeKind,
+    NodeRecord, Result,
 };
 use egui::{Id, Key, Ui};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{
+    Arc,
+    atomic::{AtomicU64, Ordering},
+};
 static NEXT_EDITOR: AtomicU64 = AtomicU64::new(1);
 /// A native source draft at one exact expected node/session, separate from canonical content.
 pub struct TextCardEditor {
@@ -17,6 +21,7 @@ pub struct TextCardEditor {
     finished: bool,
     id: Id,
     submitted: Option<String>,
+    insertion: Option<Arc<NodeRecord>>,
 }
 /// One explicit native source-editor outcome; Cancel never emits a mutation.
 #[derive(Default)]
@@ -50,9 +55,25 @@ impl TextCardEditor {
         if !matches!(node.kind(), NodeKind::Text) {
             return Err(CanvasError::NotEditable(node_id.into()));
         }
+        Self::from_node(session, node, None)
+    }
+    /// Own native input for an absent text card while the host persists its insertion.
+    /// This only creates a presentation draft, never a second canonical session.
+    pub fn pending_insertion(session: &CanvasSession, node: NodeRecord) -> Result<Self> {
+        let node = Arc::new(NodeRecord::parse(node.raw_json(), session.limits())?);
+        if session.document().node(node.id()).is_some() || !matches!(node.kind(), NodeKind::Text) {
+            return Err(CanvasError::NotEditable(node.id().into()));
+        }
+        Self::from_node(session, &node, Some(Arc::clone(&node)))
+    }
+    fn from_node(
+        session: &CanvasSession,
+        node: &NodeRecord,
+        insertion: Option<Arc<NodeRecord>>,
+    ) -> Result<Self> {
         Ok(Self {
             base: session.identity(),
-            node_id: node_id.into(),
+            node_id: node.id().into(),
             expected: node.body().into(),
             text: node.body().into(),
             composing: false,
@@ -67,7 +88,40 @@ impl TextCardEditor {
                     .map_err(|_| CanvasError::Invalid("native editor identity exhausted".into()))?,
             )),
             submitted: None,
+            insertion,
         })
+    }
+    /// Whether this draft still awaits the host's exact insertion acknowledgement.
+    pub fn awaits_insertion(&self) -> bool {
+        self.insertion.is_some()
+    }
+    /// Bounded provisional presentation at its exact unchanged source session.
+    /// The host may render this card while board interactions are frozen.
+    pub fn pending_node(&self, session: &CanvasSession) -> Option<Arc<NodeRecord>> {
+        (self.base == session.identity())
+            .then(|| self.insertion.as_ref().map(Arc::clone))
+            .flatten()
+    }
+    /// Promote the same native draft only after the exact inserted record is applied.
+    /// Text, widget identity, selection, composition and local Undo remain untouched.
+    pub fn acknowledge_insertion(&mut self, session: &CanvasSession) -> Result<()> {
+        let pending = self
+            .insertion
+            .as_ref()
+            .ok_or_else(|| CanvasError::Invalid("text card has no pending insertion".into()))?;
+        if !self.base.same_session(session.identity())
+            || self.base.revision().checked_add(1) != Some(session.identity().revision())
+            || session
+                .document()
+                .node(pending.id())
+                .map(NodeRecord::raw_json)
+                != Some(pending.raw_json())
+        {
+            return Err(CanvasError::StaleBase);
+        }
+        self.base = session.identity();
+        self.insertion = None;
+        Ok(())
     }
     /// Stable selected card identity; never an ambient resource path.
     pub fn node_id(&self) -> &str {
@@ -83,6 +137,11 @@ impl TextCardEditor {
     }
     /// Capture one submitted source while allowing later typing to remain in this same buffer.
     pub fn submit(&mut self) -> Result<CanvasTransaction> {
+        if self.insertion.is_some() {
+            return Err(CanvasError::Invalid(
+                "text card insertion awaits acknowledgement".into(),
+            ));
+        }
         if self.submitted.is_some() {
             return Err(CanvasError::Invalid(
                 "text edit already awaits acknowledgement".into(),
@@ -287,7 +346,7 @@ impl TextCardEditor {
                 cancelled: true,
             };
         }
-        if save || save_key {
+        if (save || save_key) && !self.awaits_insertion() {
             return TextEditorOutput {
                 transaction: Some(self.transaction()),
                 cancelled: false,

@@ -103,6 +103,11 @@ pub struct NodeBodyResponse {
 }
 /// Authorized host rendering only. Raw file/URL strings never become ambient I/O here.
 pub trait CanvasViewHost {
+    /// A retained new-card input, rendered only against its exact unchanged base.
+    /// The default has no provisional surface; returning an editor grants no edit authority.
+    fn pending_text_editor(&self) -> Option<&crate::TextCardEditor> {
+        None
+    }
     /// Paint a body inside the clipped reserved card rectangle. Media controls can return
     /// input ownership; the adapter will not turn their click into a card drag or shortcut.
     fn paint_body(
@@ -363,7 +368,19 @@ impl CanvasView {
         let mut node_focus = false;
         let mut double_clicked = None;
         let world_view = world_rect(self.camera, viewport);
-        for node in session.document().nodes() {
+        let pending = if config.interactive {
+            None
+        } else {
+            host.pending_text_editor()
+                .and_then(|editor| editor.pending_node(session))
+        };
+        for node in session
+            .document()
+            .nodes()
+            .iter()
+            .map(AsRef::as_ref)
+            .chain(pending.iter().map(AsRef::as_ref))
+        {
             let bounds = self.preview_bounds(node);
             if !bounds.intersects(world_view) {
                 continue;
@@ -371,7 +388,10 @@ impl CanvasView {
             let rect = screen_rect(self.camera, bounds, viewport);
             let body = rect.shrink(10.0_f32.min(rect.width().min(rect.height()) / 4.0));
             let clip = body.intersect(viewport);
-            let selected = self.selection.nodes.contains(node.id());
+            let selected = self.selection.nodes.contains(node.id())
+                || pending
+                    .as_ref()
+                    .is_some_and(|node_pending| node_pending.id() == node.id());
             let color = if bounds.validate(session.limits()).is_err() {
                 config.style.error
             } else if selected {

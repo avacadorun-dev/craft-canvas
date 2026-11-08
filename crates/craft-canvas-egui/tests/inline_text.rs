@@ -253,3 +253,213 @@ fn inline_and_optional_source_pane_share_one_retained_exact_draft() -> TestResul
     assert!(editor.dirty());
     Ok(())
 }
+
+fn pending_node(session: &CanvasSession) -> Result<NodeRecord> {
+    NodeRecord::parse(
+        r#"{"id":"pending","type":"text","x":20,"y":20,"width":300,"height":180,"text":"","future":{"preserve":9007199254740993}}"#,
+        session.limits(),
+    )
+}
+fn insert_pending(session: &CanvasSession, node: NodeRecord) -> Result<PreparedChange> {
+    session.prepare(
+        CanvasTransaction::new(
+            session.identity(),
+            vec![CanvasCommand::InsertNode {
+                node,
+                index: session.document().nodes().len(),
+            }],
+        ),
+        &StandardDialect,
+    )
+}
+#[test]
+fn pending_card_should_own_next_frame_text_and_native_undo_across_insertion_ack() -> TestResult {
+    let mut session = session()?;
+    let before = session.document().raw_json().to_owned();
+    let mut editor = TextCardEditor::pending_insertion(&session, pending_node(&session)?)?;
+    let ctx = Context::default();
+    frame(&ctx, &mut editor, vec![], 0., true, 1.);
+    let typed = frame(
+        &ctx,
+        &mut editor,
+        vec![Event::Text("Immediate 日本語 e\u{301} 😀".into())],
+        1.,
+        true,
+        1.,
+    );
+    assert!(typed.changed && typed.input.keyboard_captured);
+    assert_eq!(editor.text(), "Immediate 日本語 e\u{301} 😀");
+    assert!(editor.awaits_insertion());
+    assert!(editor.submit().is_err());
+    assert_eq!(session.document().raw_json(), before);
+    frame(&ctx, &mut editor, vec![], 2., true, 1.);
+    session.apply(insert_pending(&session, pending_node(&session)?)?)?;
+    editor.acknowledge_insertion(&session)?;
+    assert!(!editor.awaits_insertion());
+    assert_eq!(editor.text(), "Immediate 日本語 e\u{301} 😀");
+    assert!(editor.dirty());
+    frame(
+        &ctx,
+        &mut editor,
+        vec![key(Key::Z, Modifiers::COMMAND)],
+        3.,
+        true,
+        1.,
+    );
+    assert_eq!(editor.text(), "");
+    frame(
+        &ctx,
+        &mut editor,
+        vec![key(
+            Key::Z,
+            Modifiers {
+                shift: true,
+                ..Modifiers::COMMAND
+            },
+        )],
+        4.,
+        true,
+        1.,
+    );
+    assert_eq!(editor.text(), "Immediate 日本語 e\u{301} 😀");
+    session.apply(session.prepare(editor.submit()?, &StandardDialect)?)?;
+    editor.acknowledge(&session)?;
+    assert!(!editor.dirty());
+    assert_eq!(
+        session.document().node("pending").ok_or("pending")?.body(),
+        "Immediate 日本語 e\u{301} 😀"
+    );
+    assert!(
+        session
+            .document()
+            .node("pending")
+            .ok_or("pending")?
+            .raw_json()
+            .contains("9007199254740993")
+    );
+    Ok(())
+}
+#[test]
+fn pending_insertion_should_refuse_foreign_stale_wrong_record_and_existing_id_without_losing_draft()
+-> TestResult {
+    let mut current = session()?;
+    let mut editor = TextCardEditor::pending_insertion(&current, pending_node(&current)?)?;
+    *editor.text_mut() = "Retained exact draft 🪶".into();
+    let mut foreign = session()?;
+    foreign.apply(insert_pending(&foreign, pending_node(&foreign)?)?)?;
+    assert!(matches!(
+        editor.acknowledge_insertion(&foreign),
+        Err(CanvasError::StaleBase)
+    ));
+    let wrong = NodeRecord::parse(
+        &pending_node(&current)?
+            .raw_json()
+            .replace("\"width\":300", "\"width\":301"),
+        current.limits(),
+    )?;
+    current.apply(insert_pending(&current, wrong)?)?;
+    assert!(matches!(
+        editor.acknowledge_insertion(&current),
+        Err(CanvasError::StaleBase)
+    ));
+    assert_eq!(editor.text(), "Retained exact draft 🪶");
+    assert!(editor.awaits_insertion());
+    assert!(editor.pending_node(&current).is_none());
+    assert!(TextCardEditor::pending_insertion(&current, pending_node(&current)?).is_err());
+    let mut current = session()?;
+    let mut editor = TextCardEditor::pending_insertion(&current, pending_node(&current)?)?;
+    *editor.text_mut() = "Later retained".into();
+    current.apply(insert_pending(&current, pending_node(&current)?)?)?;
+    let extra = current.prepare(
+        CanvasTransaction::new(
+            current.identity(),
+            vec![CanvasCommand::EditText {
+                node_id: "a".into(),
+                expected: "Original 😀".into(),
+                text: "Other edit".into(),
+            }],
+        ),
+        &StandardDialect,
+    )?;
+    current.apply(extra)?;
+    assert!(matches!(
+        editor.acknowledge_insertion(&current),
+        Err(CanvasError::StaleBase)
+    ));
+    assert_eq!(editor.text(), "Later retained");
+    Ok(())
+}
+#[test]
+fn pending_surface_should_use_the_real_card_host_without_mutating_canonical_or_emitting_intents()
+-> TestResult {
+    struct Host {
+        editor: TextCardEditor,
+        typed: bool,
+    }
+    impl craft_canvas_egui::CanvasViewHost for Host {
+        fn pending_text_editor(&self) -> Option<&TextCardEditor> {
+            Some(&self.editor)
+        }
+        fn paint_body(
+            &mut self,
+            ui: &mut egui::Ui,
+            node: &NodeRecord,
+            rect: Rect,
+            zoom: f64,
+        ) -> craft_canvas_egui::NodeBodyResponse {
+            if node.id() != self.editor.node_id() {
+                return Default::default();
+            }
+            let output = self.editor.show_inline(ui, rect, zoom);
+            self.typed |= output.changed;
+            output.input
+        }
+    }
+    let session = session()?;
+    let before = session.document().raw_json().to_owned();
+    let mut host = Host {
+        editor: TextCardEditor::pending_insertion(&session, pending_node(&session)?)?,
+        typed: false,
+    };
+    let mut view = craft_canvas_egui::CanvasView::default();
+    let ctx = Context::default();
+    for (index, events) in [vec![], vec![Event::Text("Next frame".into())]]
+        .into_iter()
+        .enumerate()
+    {
+        let mut full = ctx.run_ui(
+            RawInput {
+                events,
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(700., 500.))),
+                time: Some(index as f64),
+                ..Default::default()
+            },
+            |root| {
+                egui::CentralPanel::default().show(root, |ui| {
+                    let mut config = craft_canvas_egui::CanvasViewConfig::new(
+                        egui::Id::new("pending-board"),
+                        ui,
+                    );
+                    config.interactive = false;
+                    config.shortcuts_blocked = true;
+                    let output = view.show(ui, &session, &StandardDialect, &mut host, &config);
+                    assert!(output.intents.is_empty());
+                    assert!(output.errors.is_empty());
+                    assert_eq!(
+                        output
+                            .nodes
+                            .iter()
+                            .filter(|node| node.node_id == "pending")
+                            .count(),
+                        1
+                    );
+                });
+            },
+        );
+        full.textures_delta.clear();
+    }
+    assert!(host.typed);
+    assert_eq!(host.editor.text(), "Next frame");
+    assert_eq!(session.document().raw_json(), before);
+    Ok(())
+}
