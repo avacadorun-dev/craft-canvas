@@ -1,0 +1,1 @@
+//! Native Canvas model foundation.

@@ -1,0 +1,5 @@
+schema: spec-driven
+context: |
+  CraftCanvas is a native Rust model and egui adapter, not an application.
+  Keep host ownership, persistence, resource decoding and UI catalogs outside the generic engine.
+  Preserve opaque JSON and exact session guards. Public fixtures are synthetic.
