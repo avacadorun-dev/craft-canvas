@@ -40,12 +40,15 @@ fn frame(
         events,
         ..RawInput::default()
     };
-    let _ = ctx.run_ui(input, |root| {
+    let mut frame = ctx.run_ui(input, |root| {
         egui::CentralPanel::default().show(root, |ui| {
             let config = CanvasViewConfig::new(Id::new("synthetic-board"), ui);
             output = Some(view.show(ui, session, &StandardDialect, host, &config));
         });
     });
+    // This event-contract harness has no GPU. Native renderer/host acceptance is separate.
+    frame.textures_delta.clear();
+    frame.platform_output.commands.clear();
     output.ok_or_else(|| CanvasError::Invalid("missing synthetic native output".into()))
 }
 fn press(pos: Pos2) -> Vec<Event> {
