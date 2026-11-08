@@ -41,7 +41,8 @@ pub struct CanvasLimits {
     pub max_work_units: usize,
     /// Maximum complete session Undo steps.
     pub max_history_steps: usize,
-    /// Maximum retained source/record payload bytes across current, past and future.
+    /// Maximum past/future raw snapshot bytes. The current source has the separate
+    /// max_bytes bound; parsed indexes and mapping overhead are reported separately.
     pub max_history_bytes: usize,
 }
 impl Default for CanvasLimits {

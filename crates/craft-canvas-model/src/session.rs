@@ -37,18 +37,27 @@ pub struct HistoryUsage {
     pub undo_steps: usize,
     /// Complete available Redo actions.
     pub redo_steps: usize,
-    /// Current snapshot's source/index/record text payload bytes.
+    /// Current exact encoded source bytes, separately bounded by max_bytes.
+    pub current_source_bytes: usize,
+    /// Current parsed snapshot's source/index/record text payload bytes.
     pub current_payload_bytes: usize,
-    /// Unique retained text/source payload across current, past and future snapshots.
+    /// Unique source bytes across current, past and future; at most the configured
+    /// current-source limit plus history-source budget after acknowledgement.
+    pub retained_source_bytes: usize,
+    /// Retained stable-selection mapping text payload, reported separately from source.
+    pub history_metadata_bytes: usize,
+    /// Current parsed payload plus historical raw source and mapping text payload.
+    /// This is text payload accounting, not a zero-overhead allocator/RSS claim.
     pub retained_payload_bytes: usize,
-    /// Worst historical payload across any retained current-state choice. This ensures
-    /// that Undo/Redo cannot exceed the acknowledged byte budget just by changing current.
+    /// Worst past/future raw-source bytes across any retained current-state choice.
+    /// The current source has its own max_bytes budget, so valid source Undo capacity
+    /// is not charged again for the current parsed index or duplicate record caches.
     pub history_budget_bytes: usize,
 }
 #[derive(Clone)]
 struct HistoryEntry {
-    document: CanvasDocument,
-    mapping: SelectionMap,
+    source: Arc<str>,
+    mapping: Arc<SelectionMap>,
 }
 /// A validated candidate and complete history transition, constructible only by a session.
 pub struct PreparedChange {
@@ -167,8 +176,8 @@ impl CanvasSession {
                 .checked_add(1)
                 .ok_or(CanvasError::IdentityExhausted)?;
             past.push_back(HistoryEntry {
-                document: self.document.clone(),
-                mapping: mapping.clone(),
+                source: self.document.data.raw.clone(),
+                mapping: Arc::new(mapping.clone()),
             });
             future.clear();
         }
@@ -200,11 +209,12 @@ impl CanvasSession {
         let previous = past.pop_back().ok_or(CanvasError::NoHistory)?;
         let mut future = self.future.clone();
         future.push(HistoryEntry {
-            document: self.document.clone(),
+            source: self.document.data.raw.clone(),
             mapping: previous.mapping.clone(),
         });
         let mapping = previous.mapping.inverse();
-        self.history_change(previous.document, past, future, mapping)
+        let after = CanvasDocument::parse(&previous.source, &self.limits)?;
+        self.history_change(after, past, future, mapping)
     }
     /// Prepare one compensating Redo at the current exact identity.
     pub fn prepare_redo(&self) -> Result<PreparedChange> {
@@ -212,10 +222,11 @@ impl CanvasSession {
         let next = future.pop().ok_or(CanvasError::NoHistory)?;
         let mut past = self.past.clone();
         past.push_back(HistoryEntry {
-            document: self.document.clone(),
+            source: self.document.data.raw.clone(),
             mapping: next.mapping.clone(),
         });
-        self.history_change(next.document, past, future, next.mapping)
+        let after = CanvasDocument::parse(&next.source, &self.limits)?;
+        self.history_change(after, past, future, next.mapping.as_ref().clone())
     }
     fn history_change(
         &self,
@@ -314,24 +325,59 @@ fn usage(
     past: &VecDeque<HistoryEntry>,
     future: &[HistoryEntry],
 ) -> Result<HistoryUsage> {
-    let mut all = Payloads::default();
-    all.add(current)?;
-    let current_payload_bytes = all.bytes;
-    let mut min_current = current_payload_bytes;
+    let mut parsed = Payloads::default();
+    parsed.add(current)?;
+    let current_payload_bytes = parsed.bytes;
+    let current_source_bytes = current.raw_json().len();
+    let mut sources = HashSet::new();
+    sources.insert(Arc::as_ptr(&current.data.raw) as *const u8);
+    let mut retained_source_bytes = current_source_bytes;
+    let mut min_current_source = current_source_bytes;
+    let mut mappings = HashSet::new();
+    let mut history_metadata_bytes = 0usize;
     for entry in past.iter().chain(future) {
-        let mut single = Payloads::default();
-        single.add(&entry.document)?;
-        min_current = min_current.min(single.bytes);
-        all.add(&entry.document)?;
+        min_current_source = min_current_source.min(entry.source.len());
+        if sources.insert(Arc::as_ptr(&entry.source) as *const u8) {
+            retained_source_bytes = retained_source_bytes
+                .checked_add(entry.source.len())
+                .ok_or(CanvasError::HistoryBudget)?;
+        }
+        if mappings.insert(Arc::as_ptr(&entry.mapping)) {
+            let mapping = &entry.mapping;
+            for value in mapping
+                .nodes
+                .iter()
+                .chain(&mapping.edges)
+                .flat_map(|(from, to)| [from, to])
+                .chain(&mapping.added_nodes)
+                .chain(&mapping.added_edges)
+                .chain(&mapping.removed_nodes)
+                .chain(&mapping.removed_edges)
+            {
+                history_metadata_bytes = history_metadata_bytes
+                    .checked_add(value.len())
+                    .ok_or(CanvasError::HistoryBudget)?;
+            }
+        }
     }
+    let history_budget_bytes = retained_source_bytes
+        .checked_sub(min_current_source)
+        .ok_or(CanvasError::HistoryBudget)?;
+    let historical_raw_bytes = retained_source_bytes
+        .checked_sub(current_source_bytes)
+        .ok_or(CanvasError::HistoryBudget)?;
+    let retained_payload_bytes = current_payload_bytes
+        .checked_add(historical_raw_bytes)
+        .and_then(|bytes| bytes.checked_add(history_metadata_bytes))
+        .ok_or(CanvasError::HistoryBudget)?;
     Ok(HistoryUsage {
         undo_steps: past.len(),
         redo_steps: future.len(),
+        current_source_bytes,
         current_payload_bytes,
-        retained_payload_bytes: all.bytes,
-        history_budget_bytes: all
-            .bytes
-            .checked_sub(min_current)
-            .ok_or(CanvasError::HistoryBudget)?,
+        retained_source_bytes,
+        history_metadata_bytes,
+        retained_payload_bytes,
+        history_budget_bytes,
     })
 }

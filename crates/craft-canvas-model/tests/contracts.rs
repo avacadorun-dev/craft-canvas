@@ -573,3 +573,89 @@ fn invalid_camera_changes_are_atomic_and_fit_respects_zoom_range() -> TestResult
     assert_eq!(camera.zoom(), Camera::MAX_ZOOM);
     Ok(())
 }
+
+#[test]
+fn history_budget_keeps_source_capacity_separate_from_current_parsed_cache() -> TestResult {
+    let limits = CanvasLimits {
+        max_bytes: 2048,
+        max_history_bytes: 4096,
+        ..CanvasLimits::default()
+    };
+    let raw = serde_json::json!({"nodes":[{"id":"a","type":"text","x":0,"y":0,"width":200,"height":120,"text":"A".repeat(100),"future":{"opaque":"X".repeat(1000)}}],"edges":[]}).to_string();
+    let source_size = raw.len();
+    let limits = CanvasLimits {
+        max_history_bytes: source_size * 2,
+        ..limits
+    };
+    let mut session = CanvasSession::new(CanvasDocument::parse(&raw, &limits)?, limits)?;
+    for character in ['B', 'C', 'D'] {
+        let expected = session.document().node("a").ok_or("a")?.body().to_owned();
+        let command = CanvasCommand::EditText {
+            node_id: "a".into(),
+            expected,
+            text: character.to_string().repeat(100),
+        };
+        let change = session.prepare(
+            CanvasTransaction::new(session.identity(), vec![command]),
+            &StandardDialect,
+        )?;
+        session.apply(change)?;
+    }
+    assert_eq!(session.history_usage().undo_steps, 2);
+    assert!(
+        session.history_usage().current_payload_bytes
+            > session.history_usage().current_source_bytes
+    );
+    assert!(session.history_usage().history_budget_bytes <= source_size * 2);
+    assert!(session.history_usage().retained_source_bytes <= source_size * 3);
+    for _ in 0..2 {
+        let change = session.prepare_undo()?;
+        session.apply(change)?;
+    }
+    assert_eq!(
+        session.document().node("a").ok_or("a")?.body(),
+        "B".repeat(100)
+    );
+    for _ in 0..2 {
+        let change = session.prepare_redo()?;
+        session.apply(change)?;
+    }
+    assert_eq!(
+        session.document().node("a").ok_or("a")?.body(),
+        "D".repeat(100)
+    );
+    Ok(())
+}
+#[test]
+fn full_source_node_capacity_can_move_and_undo_in_one_charged_operation() -> TestResult {
+    let limits = CanvasLimits::default();
+    let nodes:Vec<_>=(0..limits.max_nodes).map(|i|serde_json::json!({"id":format!("n{i}"),"type":"text","x":(i%100)*100,"y":(i/100)*100,"width":80,"height":80,"text":"synthetic"})).collect();
+    let raw = serde_json::json!({"nodes":nodes,"edges":[]}).to_string();
+    let mut session = CanvasSession::new(CanvasDocument::parse(&raw, &limits)?, limits)?;
+    let node_ids = session
+        .document()
+        .nodes()
+        .iter()
+        .map(|node| node.id().to_owned())
+        .collect();
+    let change = session.prepare(
+        CanvasTransaction::new(
+            session.identity(),
+            vec![CanvasCommand::Translate {
+                node_ids,
+                delta: WorldPoint { x: 1., y: 1. },
+            }],
+        ),
+        &StandardDialect,
+    )?;
+    session.apply(change)?;
+    assert_eq!(session.document().nodes().len(), 5000);
+    assert_eq!(
+        session.document().node("n4999").ok_or("last")?.bounds().x,
+        9901.
+    );
+    let undo = session.prepare_undo()?;
+    session.apply(undo)?;
+    assert_eq!(session.document().raw_json(), raw);
+    Ok(())
+}

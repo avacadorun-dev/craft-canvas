@@ -31,3 +31,11 @@ File, URL and extension resource strings SHALL remain inert. The host SHALL own 
 #### Scenario: Open an imported file node
 - **WHEN** a generic board contains a file or URL reference
 - **THEN** generic parsing and rendering perform no filesystem/network request and navigation is an explicit host intent
+
+### Requirement: Source-compatible history capacity
+
+Past/future history SHALL retain bounded exact raw snapshots without retaining parsed historical indexes. The current source SHALL have a separate12MiB bound from the32MiB historical source budget. Complete operation metadata and current parsed payload SHALL be reported separately; source-byte limits SHALL NOT be represented as allocator or RSS measurements.
+
+#### Scenario: Parsed caches are larger than encoded snapshots
+- **WHEN** a source-compatible board is edited while its two retained encoded snapshots fit the history budget
+- **THEN** both complete Undo steps remain available, current parsed-cache duplication does not consume their source slots, and Undo/Redo preserve the acknowledged historical budget and exact JSON
