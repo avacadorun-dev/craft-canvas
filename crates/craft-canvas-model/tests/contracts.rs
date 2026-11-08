@@ -659,3 +659,57 @@ fn full_source_node_capacity_can_move_and_undo_in_one_charged_operation() -> Tes
     assert_eq!(session.document().raw_json(), raw);
     Ok(())
 }
+
+#[test]
+fn source_compatible_long_url_and_absent_optional_canvas_fields_remain_editable() -> TestResult {
+    let limits = CanvasLimits::default();
+    let url = format!("https://example.invalid/{}", "a".repeat(1_500));
+    let raw = serde_json::json!({"nodes":[{"id":"legacy-link","type":"link","x":0,"y":0,"width":300,"height":180,"url":url,"future":{"keep":true}}],"edges":[]}).to_string();
+    let mut session = CanvasSession::new(CanvasDocument::parse(&raw, &limits)?, limits)?;
+    let original = session
+        .document()
+        .node("legacy-link")
+        .ok_or("legacy link")?
+        .raw_json()
+        .to_owned();
+    let change = session.prepare(
+        CanvasTransaction::new(
+            session.identity(),
+            vec![CanvasCommand::Translate {
+                node_ids: vec!["legacy-link".into()],
+                delta: WorldPoint { x: 20.0, y: 0.0 },
+            }],
+        ),
+        &StandardDialect,
+    )?;
+    session.apply(change)?;
+    let moved = session
+        .document()
+        .node("legacy-link")
+        .ok_or("legacy link")?;
+    assert_eq!(moved.body(), url);
+    assert_eq!(moved.bounds().x, 20.0);
+    assert!(moved.field("x-writers-studio").is_none());
+    let undo = session.prepare_undo()?;
+    session.apply(undo)?;
+    assert_eq!(
+        session
+            .document()
+            .node("legacy-link")
+            .ok_or("legacy link")?
+            .raw_json(),
+        original
+    );
+    Ok(())
+}
+
+#[test]
+fn url_byte_bound_is_distinct_from_file_character_bound() -> TestResult {
+    let limits = CanvasLimits::default();
+    let url = format!("https://example.invalid/{}", "界".repeat(700));
+    let too_long = serde_json::json!({"id":"link","type":"link","x":0,"y":0,"width":300,"height":180,"url":url}).to_string();
+    assert!(NodeRecord::parse(&too_long, &limits).is_err());
+    let file = serde_json::json!({"id":"file","type":"file","x":0,"y":0,"width":300,"height":180,"file":"界".repeat(1_024)}).to_string();
+    assert!(NodeRecord::parse(&file, &limits).is_ok());
+    Ok(())
+}

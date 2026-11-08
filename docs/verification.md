@@ -23,3 +23,8 @@ The consumer's baseline is Rust1.95, matching egui0.36.2's declared MSRV. The ne
 The owner moved all unfinished Canvas work to WriterCraft alpha.3. Exact generic foundation `6e3a54329a149dfb31af75d2e807abd99cfd0512` passed Rust1.95 locked tests/fmt/strictClippy on all3targets in run [42490395810](https://github.com/avacadorun-dev/craft-canvas/actions/runs/42490395810), including the source-history-capacity and5000-node movement regressions (28 total contracts). Its lock remains unchanged from the reviewed baseline.
 
 The next generic-only checkpoint adds connector model geometry, exact endpoint/label commands, four synthetic regressions and upstream MIT attribution. It is an alpha.3 preparation checkpoint, unqualified until its exact hosted run completes. It adds no WriterCraft integration/pin or release scope. Native connector controls/minimap/drawing/layout/GFM/media and complete Canvas acceptance remain unfinished.
+
+
+## Alpha.3 source-compatibility correction
+
+Hosted run42491125972 qualified exact connector-model source63845f9 on all3targets at Rust1.95 with an unchanged lock. Consumer audit then found the generic parser imposed a shared1024-character limit on file and URL references, while the original source accepts link URLs up to2048UTF-8bytes. The next checkpoint separates those existing source bounds and adds long-link move/Undo, absent-extension and CJK byte/character regressions. Its hosted qualification remains pending until exact-source CI completes; this is not native application acceptance.

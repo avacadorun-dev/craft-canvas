@@ -55,3 +55,12 @@ The board SHALL expose source Select/Hand/Note/Connector tools, pointer-centered
 #### Scenario: Read-only board navigation
 - **WHEN** a preserved board is not editable and the author pans, changes zoom or navigates with its minimap
 - **THEN** the camera changes without a canonical/history write and no edit intent is emitted
+
+
+### Requirement: Source-compatible optional fields and URL bounds
+
+The generic adapter SHALL accept valid source-compatible link URLs up to2048encoded UTF-8 bytes separately from file references up to1024Unicode scalars. Legacy records without optional extensions or endpoint sides SHALL retain their complete source bytes and remain editable through supported generic operations.
+
+#### Scenario: A valid long legacy link is moved
+- WHEN a preserved link card with a URL over1024characters but within2048bytes is moved and undone
+- THEN the operation succeeds without inventing extension defaults or changing the URL/unknown fields, and Undo restores the exact source record

@@ -171,8 +171,13 @@ impl NodeRecord {
         if matches!(kind, NodeKind::Text) && body.chars().count() > limits.max_text_chars {
             return Err(CanvasError::Limit("text card characters"));
         }
+        let oversized_reference = match kind {
+            NodeKind::File => body.chars().count() > 1_024,
+            NodeKind::Link => body.len() > 2_048,
+            _ => false,
+        };
         if matches!(kind, NodeKind::File | NodeKind::Link)
-            && (body.trim().is_empty() || body.chars().count() > 1_024)
+            && (body.trim().is_empty() || oversized_reference)
         {
             return Err(CanvasError::Invalid(
                 "empty or oversized file/URL reference".into(),
