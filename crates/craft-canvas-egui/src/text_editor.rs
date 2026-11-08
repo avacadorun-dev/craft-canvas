@@ -168,7 +168,7 @@ impl TextCardEditor {
                         ))
                         .desired_width(rect.width())
                         .desired_rows(1)
-                        .frame(false)
+                        .frame(egui::Frame::new())
                         .min_size(egui::vec2(0.0, rect.height()))
                         .margin(egui::Margin::same(
                             (6.0 * zoom as f32).clamp(3.0, 18.0) as i8
