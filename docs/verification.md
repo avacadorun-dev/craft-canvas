@@ -17,3 +17,9 @@ The current adapter supplies native camera/grid/culling, click/multiselect/marqu
 Exact source `78f6469bc978d597e603c8de9c7f526e04af2f0b`, hosted run [42487443225](https://github.com/avacadorun-dev/craft-canvas/actions/runs/42487443225), passed committed-lock verification, all26 semantic/native-egui-event tests, rustfmt and strict Clippy on Linux/macOS/Windows with Rust1.97. This proves the foundation contracts only; full Canvas/app/native-OS acceptance remains pending.
 
 The consumer's baseline is Rust1.95, matching egui0.36.2's declared MSRV. The next checkpoint lowers the manifest and hosted exact compiler to1.95.0; the earlier1.97 green does not substitute for that actual qualification.
+
+## Alpha.3 handoff after release-scope change
+
+The owner moved all unfinished Canvas work to WriterCraft alpha.3. Exact generic foundation `6e3a54329a149dfb31af75d2e807abd99cfd0512` passed Rust1.95 locked tests/fmt/strictClippy on all3targets in run [42490395810](https://github.com/avacadorun-dev/craft-canvas/actions/runs/42490395810), including the source-history-capacity and5000-node movement regressions (28 total contracts). Its lock remains unchanged from the reviewed baseline.
+
+The next generic-only checkpoint adds connector model geometry, exact endpoint/label commands, four synthetic regressions and upstream MIT attribution. It is an alpha.3 preparation checkpoint, unqualified until its exact hosted run completes. It adds no WriterCraft integration/pin or release scope. Native connector controls/minimap/drawing/layout/GFM/media and complete Canvas acceptance remain unfinished.

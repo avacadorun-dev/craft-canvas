@@ -1,6 +1,7 @@
 //! Bounded JSON Canvas data and exact-base native/headless transactions.
 //! Resource strings are inert; persistence and authorization belong to the host.
 mod commands;
+mod connectors;
 mod document;
 mod geometry;
 mod json_guard;
@@ -8,6 +9,10 @@ mod session;
 
 pub use commands::{
     CanvasCommand, CanvasTransaction, FieldUpdate, IdMapping, Selection, SelectionMap, WorkControl,
+};
+pub use connectors::{
+    ConnectorEnd, ConnectorEndpoint, ConnectorEndpointKind, CubicConnector, LabelTarget,
+    distance_to_segment,
 };
 pub use document::{CanvasDocument, CanvasLimits, EdgeRecord, NodeKind, NodeRecord, Side};
 pub use geometry::{Camera, WorldPoint, WorldRect};
@@ -60,6 +65,11 @@ pub type Result<T> = std::result::Result<T, CanvasError>;
 pub trait CanvasDialect {
     /// Determine which generic geometric edits may act on a preserved record.
     fn node_policy(&self, node: &NodeRecord) -> NodePolicy;
+    /// Whether this canonical element may participate in a new/reconnected edge.
+    /// Hosts exclude drawing strokes or other source-specific nonconnectable elements.
+    fn can_connect(&self, node: &NodeRecord) -> bool {
+        !matches!(node.kind(), NodeKind::Unknown(_))
+    }
     /// Validate application extensions and authorized resource relationships.
     /// The default only accepts the generic structural validation already performed.
     fn validate(&self, _document: &CanvasDocument) -> Result<()> {

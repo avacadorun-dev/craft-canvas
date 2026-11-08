@@ -1,5 +1,5 @@
 //! Raw record envelopes with a validated generic index.
-use crate::{CanvasError, Result, WorldPoint, WorldRect, json_guard::check_json};
+use crate::{CanvasError, ConnectorEnd, Result, WorldPoint, WorldRect, json_guard::check_json};
 use serde::{
     Serialize, Serializer,
     ser::{SerializeMap, SerializeSeq},
@@ -244,6 +244,8 @@ pub enum Side {
     Left,
 }
 impl Side {
+    /// Four canonical handle sides in stable source order.
+    pub const ALL: [Self; 4] = [Self::Top, Self::Right, Self::Bottom, Self::Left];
     /// Stable JSON Canvas spelling.
     pub fn as_str(self) -> &'static str {
         match self {
@@ -293,6 +295,8 @@ pub struct EdgeRecord {
     to: String,
     from_side: Option<Side>,
     to_side: Option<Side>,
+    from_end: ConnectorEnd,
+    to_end: ConnectorEnd,
     label: String,
     raw: Box<RawValue>,
     fields: RawMap,
@@ -342,6 +346,16 @@ impl EdgeRecord {
                 return Err(CanvasError::Invalid("invalid connector end".into()));
             }
         }
+        let from_end = if optional_string(&fields, "fromEnd")?.as_deref() == Some("arrow") {
+            ConnectorEnd::Arrow
+        } else {
+            ConnectorEnd::None
+        };
+        let to_end = if optional_string(&fields, "toEnd")?.as_deref() == Some("none") {
+            ConnectorEnd::None
+        } else {
+            ConnectorEnd::Arrow
+        };
         let label = optional_string(&fields, "label")?.unwrap_or_default();
         if label.chars().count() > 500 {
             return Err(CanvasError::Limit("edge label characters"));
@@ -352,6 +366,8 @@ impl EdgeRecord {
             to,
             from_side,
             to_side,
+            from_end,
+            to_end,
             label,
             raw,
             fields,
@@ -376,6 +392,14 @@ impl EdgeRecord {
     /// Explicit destination side, if present.
     pub fn to_side(&self) -> Option<Side> {
         self.to_side
+    }
+    /// Source marker, with the JSON Canvas default of no arrow.
+    pub fn from_end(&self) -> ConnectorEnd {
+        self.from_end
+    }
+    /// Destination marker, with the JSON Canvas default of an arrow.
+    pub fn to_end(&self) -> ConnectorEnd {
+        self.to_end
     }
     /// Preserved visible label.
     pub fn label(&self) -> &str {

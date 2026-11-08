@@ -39,3 +39,19 @@ Past/future history SHALL retain bounded exact raw snapshots without retaining p
 #### Scenario: Parsed caches are larger than encoded snapshots
 - **WHEN** a source-compatible board is edited while its two retained encoded snapshots fit the history budget
 - **THEN** both complete Undo steps remain available, current parsed-cache duplication does not consume their source slots, and Undo/Redo preserve the acknowledged historical budget and exact JSON
+
+### Requirement: Complete connector interaction
+
+The native adapter SHALL expose four-side connector creation, two-click connector mode, exact-edge reconnection, edge hit selection, labels, direction ends and deletion using the shared atomic model. Escape/focus/base changes SHALL cancel previews; labels and reconnects SHALL preserve all unrelated edge fields and stable IDs.
+
+#### Scenario: Reconnect an existing typed edge
+- **WHEN** the author drags one selected edge endpoint to a different connectable card and commits
+- **THEN** only that endpoint/side changes on the same edge ID in one Undo unit, its label/color/direction/unknown metadata remain intact, and a stale expected endpoint refuses without mutation
+
+### Requirement: Native navigation and source tools
+
+The board SHALL expose source Select/Hand/Note/Connector tools, pointer-centered zoom, fit all/selection and a pannable/zoomable minimap. Read-only presentation SHALL retain navigation while blocking canonical edits. Host controls and text composition SHALL retain input ownership.
+
+#### Scenario: Read-only board navigation
+- **WHEN** a preserved board is not editable and the author pans, changes zoom or navigates with its minimap
+- **THEN** the camera changes without a canonical/history write and no edit intent is emitted

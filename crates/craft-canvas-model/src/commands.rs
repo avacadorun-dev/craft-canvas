@@ -1,7 +1,8 @@
 //! Atomic commands preserve untouched raw records and merge only explicit fields.
 use crate::{
-    CanvasDialect, CanvasDocument, CanvasError, CanvasLimits, ContentIdentity, EdgeRecord,
-    GroupBehavior, NodeKind, NodeRecord, Result, WorldPoint, WorldRect,
+    CanvasDialect, CanvasDocument, CanvasError, CanvasLimits, ConnectorEndpoint,
+    ConnectorEndpointKind, ContentIdentity, EdgeRecord, GroupBehavior, LabelTarget, NodeKind,
+    NodeRecord, Result, WorldPoint, WorldRect,
     document::{RawMap, raw, valid_id},
     json_guard::check_json,
 };
@@ -171,6 +172,26 @@ pub enum CanvasCommand {
         /// Deliberate updates; ID cannot change.
         fields: Vec<FieldUpdate>,
     },
+    /// Reconnect one exact endpoint on the same preserved connector identity.
+    ReconnectEdge {
+        /// Stable existing edge ID.
+        edge_id: String,
+        /// Endpoint being changed.
+        endpoint: ConnectorEndpointKind,
+        /// Exact current endpoint, including whether its side was omitted.
+        expected: ConnectorEndpoint,
+        /// New explicit board-local endpoint.
+        replacement: ConnectorEndpoint,
+    },
+    /// Change a known group/edge label as one deliberate source-compatible action.
+    EditLabel {
+        /// Stable group or connector target.
+        target: LabelTarget,
+        /// Exact old displayed label.
+        expected: String,
+        /// New input; source UI whitespace trimming and empty-label removal are applied.
+        label: String,
+    },
     /// Remove only selected nodes and selected/incident edges; group members remain.
     RemoveSelection(Selection),
     /// Duplicate selected nodes, enclosed group members and internal connectors.
@@ -252,6 +273,7 @@ pub(crate) fn execute(
     let mut nodes = document.nodes().to_vec();
     let mut edges = document.edges().to_vec();
     let mut mapping = SelectionMap::default();
+    let mut reconnects = HashSet::new();
     for command in commands {
         work.charge(1)?;
         match command {
@@ -361,6 +383,102 @@ pub(crate) fn execute(
                     continue;
                 }
                 edges[at] = Arc::new(edge.with_fields(next, limits)?);
+            }
+            CanvasCommand::ReconnectEdge {
+                edge_id,
+                endpoint,
+                expected,
+                replacement,
+            } => {
+                work.charge(edges.len())?;
+                let at = edges
+                    .iter()
+                    .position(|edge| edge.id() == edge_id)
+                    .ok_or_else(|| CanvasError::NotFound(edge_id.clone()))?;
+                let edge = &edges[at];
+                let actual = match endpoint {
+                    ConnectorEndpointKind::From => ConnectorEndpoint {
+                        node_id: edge.from_node().into(),
+                        side: edge.from_side(),
+                    },
+                    ConnectorEndpointKind::To => ConnectorEndpoint {
+                        node_id: edge.to_node().into(),
+                        side: edge.to_side(),
+                    },
+                };
+                if actual != expected {
+                    return Err(CanvasError::StaleBase);
+                }
+                if actual == replacement {
+                    continue;
+                }
+                valid_id(&replacement.node_id, limits)?;
+                let mut fields = edge.fields().clone();
+                let (node_key, side_key) = match endpoint {
+                    ConnectorEndpointKind::From => ("fromNode", "fromSide"),
+                    ConnectorEndpointKind::To => ("toNode", "toSide"),
+                };
+                fields.insert(node_key.into(), raw(&replacement.node_id)?);
+                if let Some(side) = replacement.side {
+                    fields.insert(side_key.into(), raw(&side.as_str())?);
+                } else {
+                    fields.remove(side_key);
+                }
+                edges[at] = Arc::new(edge.with_fields(fields, limits)?);
+                reconnects.insert(edge_id);
+            }
+            CanvasCommand::EditLabel {
+                target,
+                expected,
+                label,
+            } => {
+                let trimmed=label.trim_matches(|ch|matches!(ch,'\u{0009}'..='\u{000d}'|'\u{0020}'|'\u{00a0}'|'\u{1680}'|'\u{2000}'..='\u{200a}'|'\u{2028}'|'\u{2029}'|'\u{202f}'|'\u{205f}'|'\u{3000}'|'\u{feff}'));
+                if trimmed.chars().count() > 500 {
+                    return Err(CanvasError::Limit("label characters"));
+                }
+                match target {
+                    LabelTarget::Node(id) => {
+                        let at = node_position(&nodes, &id, work)?;
+                        let node = &nodes[at];
+                        if !matches!(node.kind(), NodeKind::Group) {
+                            return Err(CanvasError::NotEditable(id));
+                        }
+                        if node.body() != expected {
+                            return Err(CanvasError::StaleBase);
+                        }
+                        if node.body() == trimmed {
+                            continue;
+                        }
+                        let mut fields = node.fields().clone();
+                        if trimmed.is_empty() {
+                            fields.remove("label");
+                        } else {
+                            fields.insert("label".into(), raw(&trimmed)?);
+                        }
+                        nodes[at] = Arc::new(node.with_fields(fields, limits)?);
+                    }
+                    LabelTarget::Edge(id) => {
+                        work.charge(edges.len())?;
+                        let at = edges
+                            .iter()
+                            .position(|edge| edge.id() == id)
+                            .ok_or(CanvasError::NotFound(id))?;
+                        let edge = &edges[at];
+                        if edge.label() != expected {
+                            return Err(CanvasError::StaleBase);
+                        }
+                        if edge.label() == trimmed {
+                            continue;
+                        }
+                        let mut fields = edge.fields().clone();
+                        if trimmed.is_empty() {
+                            fields.remove("label");
+                        } else {
+                            fields.insert("label".into(), raw(&trimmed)?);
+                        }
+                        edges[at] = Arc::new(edge.with_fields(fields, limits)?);
+                    }
+                }
             }
             CanvasCommand::RemoveSelection(selection) => {
                 work.charge(
@@ -528,6 +646,20 @@ pub(crate) fn execute(
     } else {
         CanvasDocument::from_parts(document.data.top.clone(), nodes, edges, limits)?
     };
+    reconnects.extend(mapping.added_edges.iter().cloned());
+    for id in reconnects {
+        work.charge(1)?;
+        if let Some(edge) = after.edge(&id) {
+            for endpoint in [edge.from_node(), edge.to_node()] {
+                let node = after
+                    .node(endpoint)
+                    .ok_or_else(|| CanvasError::NotFound(endpoint.into()))?;
+                if !dialect.can_connect(node) {
+                    return Err(CanvasError::NotEditable(endpoint.into()));
+                }
+            }
+        }
+    }
     dialect.validate(&after)?;
     Ok((after, mapping))
 }
