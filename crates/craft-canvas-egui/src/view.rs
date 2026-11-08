@@ -467,10 +467,10 @@ impl CanvasView {
                         if let Err(error) = self.camera.zoom_at(f64::from(zoom), local, size) {
                             errors.push(error);
                         }
-                    } else if scroll != Vec2::ZERO {
-                        if let Err(error) = self.camera.pan(point(scroll.x, scroll.y)) {
-                            errors.push(error);
-                        }
+                    } else if scroll != Vec2::ZERO
+                        && let Err(error) = self.camera.pan(point(scroll.x, scroll.y))
+                    {
+                        errors.push(error);
                     }
                 }
                 ui.input_mut(|input| input.smooth_scroll_delta = Vec2::ZERO);
@@ -643,19 +643,19 @@ impl CanvasView {
                     _ => {}
                 }
             }
-            if let Some(id) = double_clicked {
-                if let Some(node) = session.document().node(&id) {
-                    if matches!(node.kind(), NodeKind::Text) {
-                        intents.push(CanvasIntent::EditText {
-                            base: session.identity(),
-                            node_id: id,
-                        });
-                    } else if matches!(node.kind(), NodeKind::File | NodeKind::Link) {
-                        intents.push(CanvasIntent::OpenNode {
-                            base: session.identity(),
-                            node_id: id,
-                        });
-                    }
+            if let Some(id) = double_clicked
+                && let Some(node) = session.document().node(&id)
+            {
+                if matches!(node.kind(), NodeKind::Text) {
+                    intents.push(CanvasIntent::EditText {
+                        base: session.identity(),
+                        node_id: id,
+                    });
+                } else if matches!(node.kind(), NodeKind::File | NodeKind::Link) {
+                    intents.push(CanvasIntent::OpenNode {
+                        base: session.identity(),
+                        node_id: id,
+                    });
                 }
             }
             if response.double_clicked()
