@@ -1,0 +1,83 @@
+name: Qualify CraftCanvas foundation
+on:
+  push:
+    branches: [main, feature/native-canvas-foundation]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: canvas-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  lock:
+    name: Verify committed dependency lock
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      ready: ${{ steps.metadata.outputs.ready }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Install exact supported compiler
+        run: |
+          rustup toolchain install 1.97.0 --profile minimal
+          rustup default 1.97.0
+      - name: Resolve only on hosted runner and retain exact identity
+        id: metadata
+        run: |
+          mkdir -p artifacts/lock
+          git rev-parse HEAD > artifacts/lock/source-commit.txt
+          rustc -vV > artifacts/lock/compiler.txt
+          ready=true
+          if ! cargo metadata --locked --all-features --format-version 1 > artifacts/lock/metadata.json 2> artifacts/lock/check.log; then
+            cargo metadata --all-features --format-version 1 > artifacts/lock/metadata.json 2> artifacts/lock/resolve.log
+            ready=false
+          fi
+          cp Cargo.lock artifacts/lock/Cargo.lock
+          echo "$ready" > artifacts/lock/committed-lock-ready.txt
+          echo "ready=$ready" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: canvas-lock-${{ github.sha }}
+          path: artifacts/lock
+          retention-days: 14
+      - name: Require resolved lock acknowledgement before qualification
+        if: steps.metadata.outputs.ready != 'true'
+        run: |
+          echo '::error::Review and commit the hosted resolved Cargo.lock before qualification.'
+          exit 1
+  verify:
+    name: Native model and adapter (${{ matrix.os }})
+    needs: lock
+    if: needs.lock.outputs.ready == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Install supported Rust checks
+        run: |
+          rustup toolchain install 1.97.0 --profile minimal --component rustfmt --component clippy
+          rustup default 1.97.0
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: |
+            ~/.cargo/registry
+            target
+          key: canvas-${{ runner.os }}-${{ runner.arch }}-1.97-${{ hashFiles('Cargo.lock') }}
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Test semantic and native adapter contracts
+        run: cargo test --workspace --all-features --locked
+      - name: Strict Clippy
+        run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+      - name: Require an unchanged lock
+        run: git diff --exit-code -- Cargo.lock
