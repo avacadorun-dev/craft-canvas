@@ -21,6 +21,10 @@ pub struct ContentIdentity {
     revision: u64,
 }
 impl ContentIdentity {
+    /// Whether both tokens belong to the same in-process editing session.
+    pub fn same_session(self, other: Self) -> bool {
+        self.epoch == other.epoch
+    }
     /// Monotonic local change revision, including Undo/Redo.
     pub fn revision(self) -> u64 {
         self.revision

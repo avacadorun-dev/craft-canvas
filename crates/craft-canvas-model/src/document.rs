@@ -111,6 +111,27 @@ pub struct NodeRecord {
     fields: RawMap,
 }
 impl NodeRecord {
+    /// Construct a standard text card with a caller-allocated stable ID.
+    pub fn text(
+        id: String,
+        bounds: WorldRect,
+        text: String,
+        limits: &CanvasLimits,
+    ) -> Result<Self> {
+        let mut fields = RawMap::new();
+        for (key, value) in [
+            ("id", raw(&id)?),
+            ("type", raw(&"text")?),
+            ("x", raw(&bounds.x)?),
+            ("y", raw(&bounds.y)?),
+            ("width", raw(&bounds.width)?),
+            ("height", raw(&bounds.height)?),
+            ("text", raw(&text)?),
+        ] {
+            fields.insert(key.into(), value);
+        }
+        Self::parse(&serde_json::to_string(&fields)?, limits)
+    }
     /// Parse a standalone node without assigning project/resource authority.
     pub fn parse(raw: &str, limits: &CanvasLimits) -> Result<Self> {
         limits.validate()?;
@@ -276,6 +297,27 @@ pub struct EdgeRecord {
     fields: RawMap,
 }
 impl EdgeRecord {
+    /// Construct a standard connector with explicit caller-owned identity and endpoints.
+    pub fn connect(
+        id: String,
+        from: String,
+        from_side: Side,
+        to: String,
+        to_side: Side,
+        limits: &CanvasLimits,
+    ) -> Result<Self> {
+        let mut fields = RawMap::new();
+        for (key, value) in [
+            ("id", raw(&id)?),
+            ("fromNode", raw(&from)?),
+            ("fromSide", raw(&from_side.as_str())?),
+            ("toNode", raw(&to)?),
+            ("toSide", raw(&to_side.as_str())?),
+        ] {
+            fields.insert(key.into(), value);
+        }
+        Self::parse(&serde_json::to_string(&fields)?, limits)
+    }
     /// Parse a standalone connector; document validation additionally checks endpoints.
     pub fn parse(raw: &str, limits: &CanvasLimits) -> Result<Self> {
         limits.validate()?;
@@ -497,6 +539,15 @@ impl CanvasDocument {
     pub fn field(&self, key: &str) -> Option<&RawValue> {
         self.data.top.get(key).map(Box::as_ref)
     }
+    /// Expand a movement selection using the same group/lock policy as transaction preparation.
+    pub fn expand_move_selection(
+        &self,
+        ids: &[String],
+        dialect: &dyn crate::CanvasDialect,
+        work: &mut crate::WorkControl<'_>,
+    ) -> Result<std::collections::BTreeSet<String>> {
+        crate::commands::expanded_selection(self.nodes(), ids, dialect, work)
+    }
     /// Combined node bounds, or None for an empty graph.
     pub fn bounds(&self) -> Option<WorldRect> {
         self.nodes()
@@ -589,7 +640,7 @@ fn number(fields: &RawMap, key: &str) -> Result<f64> {
     .map_err(Into::into)
 }
 pub(crate) fn valid_id(id: &str, limits: &CanvasLimits) -> Result<()> {
-    if id.trim().is_empty() || id.len() > limits.max_id_bytes {
+    if id.trim().is_empty() || id.trim().len() > limits.max_id_bytes {
         Err(CanvasError::Invalid("empty or oversized ID".into()))
     } else {
         Ok(())

@@ -1,3 +1,4 @@
+//! Synthetic semantic contracts; no private project data.
 use craft_canvas_model::*;
 use std::{
     collections::{BTreeMap, BTreeSet},

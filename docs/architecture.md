@@ -15,3 +15,9 @@ Accepted 2026-11-08. Session identity is generated in process and never deserial
 ## ADR 004 — camera and budgets
 
 Accepted 2026-11-08. Subtract an f64 world camera origin before converting visible local geometry to egui f32. Paint text in screen space at the requested effective font size. Input, nesting, graph counts, command count, geometry and retained history are bounded. History reports retained encoded/source payload accounting rather than pretending allocator overhead is zero.
+
+## Adapter checkpoint API
+
+`CanvasView::show(ui, session, dialect, host, config)` paints one canonical session and emits `CanvasIntent::Transaction` or explicit host actions. The host prepares through `CanvasSession::prepare`, validates project resources, checkpoints durably, then calls `apply`. `CanvasViewHost::paint_body` receives an intersected native clip rectangle and returns pointer/keyboard ownership; interactive media cannot silently become a drag. `TextCardEditor` captures exact base/old source and mounts inside the host's existing modal grid; it retains a draft on save failure and emits no mutation on Cancel. It does not pretend that its local acceptance is durable persistence.
+
+The source editor's basic Save/Cancel component is intentionally separate from the board controller. The host blocks board shortcuts while it owns a dialog/editor. Native Canvas copy/cut/paste are intents, not ambient clipboard reads; app authorization and one captured raw bundle remain host concerns.

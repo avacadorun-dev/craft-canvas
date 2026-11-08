@@ -7,7 +7,7 @@ use crate::{
 };
 use serde_json::value::RawValue;
 use std::{
-    collections::{BTreeMap, BTreeSet, HashSet},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -363,12 +363,18 @@ pub(crate) fn execute(
                 edges[at] = Arc::new(edge.with_fields(next, limits)?);
             }
             CanvasCommand::RemoveSelection(selection) => {
+                work.charge(
+                    nodes.len() + edges.len() + selection.nodes.len() + selection.edges.len(),
+                )?;
+                let node_ids: HashSet<_> = nodes.iter().map(|node| node.id()).collect();
+                let edge_ids: HashSet<_> = edges.iter().map(|edge| edge.id()).collect();
                 for id in &selection.nodes {
-                    node_position(&nodes, id, work)?;
+                    if !node_ids.contains(id.as_str()) {
+                        return Err(CanvasError::NotFound(id.clone()));
+                    }
                 }
                 for id in &selection.edges {
-                    work.charge(edges.len())?;
-                    if !edges.iter().any(|edge| edge.id() == id) {
+                    if !edge_ids.contains(id.as_str()) {
                         return Err(CanvasError::NotFound(id.clone()));
                     }
                 }
@@ -426,13 +432,16 @@ pub(crate) fn execute(
                 {
                     return Err(CanvasError::Limit("duplicated graph size"));
                 }
+                work.charge(nodes.len() + edges.len() + ids.nodes.len() + ids.edges.len())?;
+                let existing: HashSet<_> = nodes
+                    .iter()
+                    .map(|node| node.id())
+                    .chain(edges.iter().map(|edge| edge.id()))
+                    .collect();
                 let mut fresh = HashSet::new();
                 for id in ids.nodes.values().chain(ids.edges.values()) {
                     valid_id(id, limits)?;
-                    if !fresh.insert(id.as_str())
-                        || nodes.iter().any(|node| node.id() == id)
-                        || edges.iter().any(|edge| edge.id() == id)
-                    {
+                    if !fresh.insert(id.as_str()) || existing.contains(id.as_str()) {
                         return Err(CanvasError::Invalid(
                             "duplicated identity is not fresh".into(),
                         ));
@@ -529,16 +538,28 @@ fn node_position(nodes: &[Arc<NodeRecord>], id: &str, work: &mut WorkControl<'_>
         .position(|node| node.id() == id)
         .ok_or_else(|| CanvasError::NotFound(id.into()))
 }
-fn expanded_selection(
+pub(crate) fn expanded_selection(
     nodes: &[Arc<NodeRecord>],
     ids: &[String],
     dialect: &dyn CanvasDialect,
     work: &mut WorkControl<'_>,
 ) -> Result<BTreeSet<String>> {
+    if ids.len() > nodes.len() {
+        return Err(CanvasError::Invalid(
+            "movement selection exceeds board size".into(),
+        ));
+    }
+    work.charge(nodes.len() + ids.len())?;
+    let lookup: HashMap<_, _> = nodes.iter().map(|node| (node.id(), node)).collect();
     let mut selected = BTreeSet::new();
     let mut groups = vec![];
     for id in ids {
-        let node = &nodes[node_position(nodes, id, work)?];
+        if !selected.insert(id.clone()) {
+            return Err(CanvasError::Invalid("duplicate movement identity".into()));
+        }
+        let node = lookup
+            .get(id.as_str())
+            .ok_or_else(|| CanvasError::NotFound(id.clone()))?;
         let policy = dialect.node_policy(node);
         if !policy.movable {
             return Err(CanvasError::NotEditable(id.clone()));
