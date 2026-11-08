@@ -40,8 +40,8 @@ fn frame(
         events,
         ..RawInput::default()
     };
-    let _ = ctx.run(input, |ctx| {
-        egui::CentralPanel::default().show(ctx, |ui| {
+    let _ = ctx.run_ui(input, |root| {
+        egui::CentralPanel::default().show(root, |ui| {
             let config = CanvasViewConfig::new(Id::new("synthetic-board"), ui);
             output = Some(view.show(ui, session, &StandardDialect, host, &config));
         });
