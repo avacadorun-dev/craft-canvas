@@ -149,6 +149,13 @@ impl TextCardEditor {
         });
         let composing = self.composing || ime_frame;
         let owns_focus = ui.memory(|memory| memory.has_focus(self.id));
+        if composing && owns_focus {
+            // The OS IME owns these keys; TextEdit must not turn them into blur/newline actions.
+            ui.input_mut(|input| {
+                input.consume_key(egui::Modifiers::COMMAND, Key::Enter);
+                input.consume_key(egui::Modifiers::NONE, Key::Escape);
+            });
+        }
         let done_key = !composing
             && owns_focus
             && ui.input_mut(|input| input.consume_key(egui::Modifiers::COMMAND, Key::Enter));

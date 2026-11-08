@@ -193,7 +193,36 @@ fn native_composition_or_os_focus_loss_should_not_be_done_or_cancel() -> TestRes
         true,
         1.,
     );
-    frame(&ctx, &mut editor, vec![], 4., true, 1.);
+    let pos = Pos2::new(80., 80.);
+    frame(
+        &ctx,
+        &mut editor,
+        vec![
+            Event::PointerMoved(pos),
+            Event::PointerButton {
+                pos,
+                button: egui::PointerButton::Primary,
+                pressed: true,
+                modifiers: Modifiers::NONE,
+            },
+        ],
+        4.,
+        true,
+        1.,
+    );
+    frame(
+        &ctx,
+        &mut editor,
+        vec![Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed: false,
+            modifiers: Modifiers::NONE,
+        }],
+        4.5,
+        true,
+        1.,
+    );
     let output = frame(
         &ctx,
         &mut editor,
