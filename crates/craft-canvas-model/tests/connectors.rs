@@ -84,6 +84,48 @@ fn wrong_expected_endpoint_refuses_without_mutation() -> TestResult {
     Ok(())
 }
 
+#[test]
+fn node_only_reconnect_preserves_unchanged_legacy_side_lexeme() -> TestResult {
+    for side_json in ["null", r#""""#, r#""\u006ceft""#] {
+        let original = RAW.replace(r#""toSide":"left""#, &format!(r#""toSide":{side_json}"#));
+        let limits = CanvasLimits::default();
+        let mut session = CanvasSession::new(CanvasDocument::parse(&original, &limits)?, limits)?;
+        let side = session.document().edge("e").ok_or("e")?.to_side();
+        let prepared = session.prepare(
+            CanvasTransaction::new(
+                session.identity(),
+                vec![CanvasCommand::ReconnectEdge {
+                    edge_id: "e".into(),
+                    endpoint: ConnectorEndpointKind::To,
+                    expected: ConnectorEndpoint {
+                        node_id: "b".into(),
+                        side,
+                    },
+                    replacement: ConnectorEndpoint {
+                        node_id: "c".into(),
+                        side,
+                    },
+                }],
+            ),
+            &StandardDialect,
+        )?;
+        session.apply(prepared)?;
+        assert_eq!(
+            session
+                .document()
+                .edge("e")
+                .ok_or("e")?
+                .field("toSide")
+                .ok_or("side")?
+                .get(),
+            side_json
+        );
+        session.apply(session.prepare_undo()?)?;
+        assert_eq!(session.document().raw_json(), original);
+    }
+    Ok(())
+}
+
 struct RefuseNodeConnections(&'static str);
 impl CanvasDialect for RefuseNodeConnections {
     fn node_policy(&self, node: &NodeRecord) -> NodePolicy {

@@ -72,3 +72,11 @@ Hosted workspace tests, formatting and strict Clippy run on Linux, macOS and Win
 ## License and provenance
 
 MIT, with third-party notices retained. Connector mathematics includes attributed XYFlow adaptations; see [upstream provenance](https://github.com/avacadorun-dev/craft-canvas/blob/feature/native-canvas-foundation/docs/upstream.md) and [license notices](https://github.com/avacadorun-dev/craft-canvas/tree/feature/native-canvas-foundation/LICENSES). No JavaScript runtime is included.
+
+## CC-02 candidate: stable named ports
+
+The current development candidate adds `SetPorts`, `PortEndpoint`, pure `validate_connection`, `EdgeRecord::connect_ports` and guarded `ConnectPorts`/`ReconnectPort`. These APIs are **not in the qualified Git pin above**. The [headless example](examples/named_ports.rs) authors two ports on one side, previews a connection, prepares/applies it, reparses saved data and checks exact Undo. Its hosted qualification command is `cargo run -p craft-canvas-model --example named_ports --locked`; running it provides model evidence, not native interaction or production acceptance.
+
+The optional `craftCanvas` version1 extension stores node-local `(kind,id)` port keys, finite local anchor geometry and edge bindings. `connectable`, `start` and `end` default true; omitted edge bindings retain legacy side semantics, and omitted reconnect policy inherits the host default. Strict mode requires normalized source→target direction; actual initiation controls start/end availability. See the [exact schema and API contract](../../openspec/changes/named-ports-validation/design.md).
+
+Unknown members and unchanged omitted/default values remain preserved. Unsupported or malformed extensions refuse operations that require their interpretation; unrelated supported edits remain possible. Removing an attached port requires repairing or removing its incident bindings in the same atomic transaction. Preview success never grants Apply or durable-save authority; final preparation rechecks the complete candidate and original reconnect policy.

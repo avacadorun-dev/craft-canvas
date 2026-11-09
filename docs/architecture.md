@@ -1,5 +1,11 @@
 # Architecture decisions
 
+## ADR 007 — compatible named-port metadata
+
+Selected2026-11-09 for CC-02. Store optional version1 `craftCanvas` metadata in the existing raw node/edge envelopes. Node-local `(kind,id)` keys are independent of geometric sides; edge node references remain standard `fromNode`/`toNode`. Preserve unknown versions and malformed known envelopes without interpreting them as editable defaults. Legacy endpoints remain available without migrating stored data. The [exact codec/API contract](../openspec/changes/named-ports-validation/design.md) defines absence, strict/loose validation, actual initiation, dynamic removal and reconnect policy.
+
+Preview and final preparation share pure validation. Preparation resolves the complete candidate while authorizing reconnect against the original edge policy. Preservation copies retain unresolved imported bindings; deliberately retargeted copies receive authoring validation. Derived port caches and bounded copy provenance do not create another authoritative document. This model decision does not establish CC-03 native gesture acceptance or authorize a consumer repin.
+
 ## ADR 006 — production parity on the preserved authority
 
 Selected 2026-11-09; implementation acceptance pending. The production target is complete observable React Flow capability through native Rust, then full Studio Canvas integration. Retain ADR001–005's canonical model, exact guarded changes and f64 projection. Expand the API through source-backed native equivalents rather than substituting an automatically mutated graph or browser runtime. The [production plan](PRODUCTION_PLAN.md) owns milestone/evidence boundaries; [React Flow inventory](REACT_FLOW_PARITY.md) owns source coverage.

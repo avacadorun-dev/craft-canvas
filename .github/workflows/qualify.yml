@@ -77,6 +77,8 @@ jobs:
         run: cargo fmt --all -- --check
       - name: Test semantic and native adapter contracts
         run: cargo test --workspace --all-features --locked
+      - name: Run the headless named-port example
+        run: cargo run --package craft-canvas-model --example named_ports --locked
       - name: Strict Clippy
         run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
       - name: Require an unchanged lock

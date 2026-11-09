@@ -1,5 +1,10 @@
 //! Raw record envelopes with a validated generic index.
-use crate::{CanvasError, ConnectorEnd, Result, WorldPoint, WorldRect, json_guard::check_json};
+use crate::{
+    CanvasError, ConnectorEnd, ConnectorEndpointKind, ExtensionStatus, PortBinding, PortDefinition,
+    PortEndpoint, PortKey, ReconnectPolicy, Result, WorldPoint, WorldRect,
+    json_guard::check_json,
+    ports::{self, EdgePorts, NodePorts},
+};
 use serde::{
     Serialize, Serializer,
     ser::{SerializeMap, SerializeSeq},
@@ -21,6 +26,8 @@ pub struct CanvasLimits {
     pub max_nodes: usize,
     /// Maximum edge count.
     pub max_edges: usize,
+    /// Maximum recognized named-port definitions on one node.
+    pub max_ports_per_node: usize,
     /// Maximum structural JSON depth.
     pub max_depth: usize,
     /// Maximum ID bytes, with IDs retained exactly rather than trimmed.
@@ -51,6 +58,7 @@ impl Default for CanvasLimits {
             max_bytes: 12 * 1024 * 1024,
             max_nodes: 5_000,
             max_edges: 10_000,
+            max_ports_per_node: 256,
             max_depth: 64,
             max_id_bytes: 200,
             max_text_chars: 100_000,
@@ -70,6 +78,11 @@ impl CanvasLimits {
         if self.max_bytes == 0
             || self.max_nodes == 0
             || self.max_edges == 0
+            || self.max_ports_per_node == 0
+            || self
+                .max_nodes
+                .checked_mul(self.max_ports_per_node)
+                .is_none()
             || self.max_depth == 0
             || self.max_depth > 96
             || self.max_id_bytes == 0
@@ -110,6 +123,7 @@ pub struct NodeRecord {
     body: String,
     raw: Box<RawValue>,
     fields: RawMap,
+    ports: NodePorts,
 }
 impl NodeRecord {
     /// Construct a standard text card with a caller-allocated stable ID.
@@ -183,6 +197,14 @@ impl NodeRecord {
                 "empty or oversized file/URL reference".into(),
             ));
         }
+        let ports = NodePorts::parse(&fields, limits)?;
+        if ports
+            .ports
+            .iter()
+            .any(|port| !(bounds.x + port.x).is_finite() || !(bounds.y + port.y).is_finite())
+        {
+            return Err(CanvasError::Limit("port world coordinate"));
+        }
         Ok(Self {
             id,
             kind,
@@ -190,6 +212,7 @@ impl NodeRecord {
             body,
             raw,
             fields,
+            ports,
         })
     }
     /// Exact stable identity.
@@ -208,6 +231,18 @@ impl NodeRecord {
     pub fn body(&self) -> &str {
         &self.body
     }
+    /// Recognized named ports in preserved order; inspect status before assuming absence.
+    pub fn ports(&self) -> &[PortDefinition] {
+        &self.ports.ports
+    }
+    /// Resolve an exact node-local key through this record's bounded cache.
+    pub fn port(&self, key: &PortKey) -> Option<&PortDefinition> {
+        self.ports.get(key)
+    }
+    /// Whether this node's preserved port metadata can be interpreted.
+    pub fn port_extension_status(&self) -> ExtensionStatus {
+        self.ports.status
+    }
     /// Unmodified or deliberately merged record JSON.
     pub fn raw_json(&self) -> &str {
         self.raw.get()
@@ -222,11 +257,26 @@ impl NodeRecord {
             limits,
         )
     }
+    pub(crate) fn with_ports(
+        &self,
+        ports: &[PortDefinition],
+        limits: &CanvasLimits,
+    ) -> Result<Self> {
+        ports::ensure_editable(self.ports.status, &self.id)?;
+        if self.ports.ports.as_slice() == ports {
+            return Self::from_raw(self.raw.clone(), limits);
+        }
+        self.with_fields(
+            ports::encode_ports(&self.fields, &self.ports, ports, limits)?,
+            limits,
+        )
+    }
     pub(crate) fn fields(&self) -> &RawMap {
         &self.fields
     }
     pub(crate) fn payload_bytes(&self) -> usize {
         self.raw.get().len()
+            + self.ports.payload_bytes()
             + self.id.len()
             + self.body.len()
             + self
@@ -305,8 +355,42 @@ pub struct EdgeRecord {
     label: String,
     raw: Box<RawValue>,
     fields: RawMap,
+    ports: EdgePorts,
 }
 impl EdgeRecord {
+    /// Construct preserved legacy/named endpoints without granting connection acceptance.
+    /// Hosts must prepare insertion against the actual document and dialect.
+    pub fn connect_ports(
+        id: String,
+        from: PortEndpoint,
+        to: PortEndpoint,
+        limits: &CanvasLimits,
+    ) -> Result<Self> {
+        let mut fields = RawMap::new();
+        fields.insert("id".into(), raw(&id)?);
+        fields.insert("fromNode".into(), raw(&from.node_id)?);
+        fields.insert("toNode".into(), raw(&to.node_id)?);
+        let mut namespace = RawMap::new();
+        for (endpoint, side_key, port_key) in
+            [(&from, "fromSide", "fromPort"), (&to, "toSide", "toPort")]
+        {
+            match &endpoint.binding {
+                PortBinding::Legacy(Some(side)) => {
+                    fields.insert(side_key.into(), raw(&side.as_str())?);
+                }
+                PortBinding::Legacy(None) => {}
+                PortBinding::Named(key) => {
+                    ports::validate_key(key, limits)?;
+                    namespace.insert(port_key.into(), ports::encode_key(None, key)?);
+                }
+            }
+        }
+        if !namespace.is_empty() {
+            namespace.insert("version".into(), raw(&1u64)?);
+            ports::write_namespace(&mut fields, namespace)?;
+        }
+        Self::parse(&serde_json::to_string(&fields)?, limits)
+    }
     /// Construct a standard connector with explicit caller-owned identity and endpoints.
     pub fn connect(
         id: String,
@@ -365,6 +449,7 @@ impl EdgeRecord {
         if label.chars().count() > 500 {
             return Err(CanvasError::Limit("edge label characters"));
         }
+        let ports = EdgePorts::parse(&fields, limits)?;
         Ok(Self {
             id,
             from,
@@ -376,6 +461,7 @@ impl EdgeRecord {
             label,
             raw,
             fields,
+            ports,
         })
     }
     /// Stable edge identity.
@@ -397,6 +483,29 @@ impl EdgeRecord {
     /// Explicit destination side, if present.
     pub fn to_side(&self) -> Option<Side> {
         self.to_side
+    }
+    /// Decode one canonical endpoint, refusing unsupported metadata instead of guessing.
+    pub fn endpoint(&self, endpoint: ConnectorEndpointKind) -> Result<PortEndpoint> {
+        ports::ensure_editable(self.ports.status, &self.id)?;
+        let (node_id, side, port) = match endpoint {
+            ConnectorEndpointKind::From => (&self.from, self.from_side, &self.ports.from),
+            ConnectorEndpointKind::To => (&self.to, self.to_side, &self.ports.to),
+        };
+        Ok(PortEndpoint {
+            node_id: node_id.clone(),
+            binding: port.as_ref().map_or(PortBinding::Legacy(side), |key| {
+                PortBinding::Named(key.clone())
+            }),
+        })
+    }
+    /// Original edge override, or Inherit when omitted; unsupported metadata refuses.
+    pub fn reconnect_policy(&self) -> Result<ReconnectPolicy> {
+        ports::ensure_editable(self.ports.status, &self.id)?;
+        Ok(self.ports.reconnect)
+    }
+    /// Whether this edge's preserved port and reconnect metadata can be interpreted.
+    pub fn port_extension_status(&self) -> ExtensionStatus {
+        self.ports.status
     }
     /// Source marker, with the JSON Canvas default of no arrow.
     pub fn from_end(&self) -> ConnectorEnd {
@@ -427,8 +536,71 @@ impl EdgeRecord {
             limits,
         )
     }
+    pub(crate) fn with_port_endpoint(
+        &self,
+        endpoint: ConnectorEndpointKind,
+        replacement: &PortEndpoint,
+        limits: &CanvasLimits,
+    ) -> Result<Self> {
+        let current = self.endpoint(endpoint)?;
+        if current == *replacement {
+            return Self::from_raw(self.raw.clone(), limits);
+        }
+        valid_id(&replacement.node_id, limits)?;
+        let (node_key, side_key, port_key) = match endpoint {
+            ConnectorEndpointKind::From => ("fromNode", "fromSide", "fromPort"),
+            ConnectorEndpointKind::To => ("toNode", "toSide", "toPort"),
+        };
+        let mut fields = self.fields.clone();
+        if current.node_id != replacement.node_id {
+            fields.insert(node_key.into(), raw(&replacement.node_id)?);
+        }
+        if current.binding != replacement.binding {
+            match &replacement.binding {
+                PortBinding::Legacy(side) => {
+                    if let Some(side) = side {
+                        fields.insert(side_key.into(), raw(&side.as_str())?);
+                    } else {
+                        fields.remove(side_key);
+                    }
+                    if matches!(current.binding, PortBinding::Named(_)) {
+                        let mut namespace = ports::editable_namespace(&fields)?;
+                        namespace.remove(port_key);
+                        ports::write_namespace(&mut fields, namespace)?;
+                    }
+                }
+                PortBinding::Named(key) => {
+                    ports::validate_key(key, limits)?;
+                    let mut namespace = ports::editable_namespace(&fields)?;
+                    let value = ports::encode_key(namespace.get(port_key).map(Box::as_ref), key)?;
+                    namespace.insert(port_key.into(), value);
+                    ports::write_namespace(&mut fields, namespace)?;
+                }
+            }
+        }
+        self.with_fields(fields, limits)
+    }
+    pub(crate) fn with_reconnect_policy(
+        &self,
+        policy: ReconnectPolicy,
+        limits: &CanvasLimits,
+    ) -> Result<Self> {
+        if self.reconnect_policy()? == policy {
+            return Self::from_raw(self.raw.clone(), limits);
+        }
+        let mut fields = self.fields.clone();
+        let mut namespace = ports::editable_namespace(&fields)?;
+        if policy == ReconnectPolicy::Inherit {
+            namespace.remove("reconnect");
+        } else {
+            namespace.insert("reconnect".into(), raw(&policy.as_str())?);
+        }
+        ports::write_namespace(&mut fields, namespace)?;
+        self.with_fields(fields, limits)
+    }
     pub(crate) fn payload_bytes(&self) -> usize {
         self.raw.get().len()
+            + self.ports.payload_bytes()
             + self.id.len()
             + self.from.len()
             + self.to.len()
