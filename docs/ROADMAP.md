@@ -36,6 +36,7 @@ A separate WriterCraft agent is authorized to complete a coherent non-Canvas alp
 - Lean verification uses existing checks, representative cross-feature native journeys and regressions for actual defects. Inventory completeness is mandatory; a test per API property or exhaustive combination matrix is not.
 - All consumer-required primitives must be delivered before CC-12; mixed RF rows may retain broader library options in CC-13 only where the consumer map explicitly does not need them. CC-04 includes B07 external/project drop geometry and atomic insertion; CC-08 requires usable layout behavior/providers, not merely a callback scaffold. No baseline function is silently deferred by classification.
 - Subsequent scope corrections update the issue, inventory, feedback/architecture and reviewer criteria before reacceptance. Preserve history rather than rewriting failed evidence as success.
+- [CV-04](design/USER_FEEDBACK.md#cv-04--board-reference-must-represent-the-full-original-workspace) requires the visual reference and eventual CC-12 host to represent the original heterogeneous board, not only text nodes and edges. [The allocation](WRITERCRAFT_CONSUMER.md#visual-scope-correction--cv-04) retains media surfaces, groups/frames, drawing/shapes, types/labels, minimap and all less-visible B01–B26 workflows. The strict issue order is unchanged; no application feature is accepted by a library showcase.
 
 ## Planning estimate
 
