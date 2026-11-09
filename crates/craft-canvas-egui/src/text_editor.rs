@@ -402,7 +402,11 @@ impl TextCardEditor {
             && !immediate_focus
             && !composing
             && response.lost_focus()
-            && ui.input(|input| input.focused && input.pointer.primary_pressed());
+            && ui.input(|input| {
+                input.focused
+                    && (input.pointer.primary_pressed()
+                        || input.pointer.button_clicked(egui::PointerButton::Primary))
+            });
         InlineTextOutput {
             changed: response.changed(),
             done_requested: done_key || deliberate_blur,

@@ -1397,27 +1397,76 @@ fn legacy_unarmed_mount_should_not_claim_first_frame_ime() -> TestResult {
 
 #[test]
 fn deferred_first_mount_should_respect_a_new_outside_pointer_action() -> TestResult {
+    for same_batch in [true, false] {
+        let session = session()?;
+        let mut editor = TextCardEditor::new(&session, "a")?;
+        let ctx = Context::default();
+        ctx.enable_accesskit();
+        let mut tree = None;
+        for output in creation_handoff_frames(&ctx, &mut editor, false)? {
+            accept_accessibility_update(&mut tree, &output)?;
+        }
+        let position = Pos2::new(600., 350.);
+        let pointer = |pressed| Event::PointerButton {
+            pos: position,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: Modifiers::NONE,
+        };
+        let mut events = vec![Event::PointerMoved(position), pointer(true)];
+        if same_batch {
+            events.push(pointer(false));
+        }
+        let (mut output, full) = frame_with_platform(&ctx, &mut editor, events, 0., true, 1., true);
+        accept_accessibility_update(&mut tree, &full)?;
+        if !same_batch {
+            // egui defaults to losing focus on a completed click, not its press.
+            assert!(!output.done_requested && output.input.keyboard_captured);
+            assert!(!output.cancelled && !output.composing);
+            let (released, full) = frame_with_platform(
+                &ctx,
+                &mut editor,
+                vec![pointer(false)],
+                0.05,
+                true,
+                1.,
+                true,
+            );
+            accept_accessibility_update(&mut tree, &full)?;
+            output = released;
+        }
+        assert!(output.done_requested);
+        assert!(!output.cancelled && !output.input.keyboard_captured);
+        assert!(ctx.memory(|memory| memory.focused()).is_none());
+        assert_eq!(editor.text(), "Original 😀");
+    }
+    Ok(())
+}
+
+#[test]
+fn deferred_outside_press_should_finish_when_native_focus_policy_uses_presses() -> TestResult {
     let session = session()?;
     let mut editor = TextCardEditor::new(&session, "a")?;
     let ctx = Context::default();
+    ctx.options_mut(|options| {
+        options.input_options.surrender_focus_on = egui::SurrenderFocusOn::Presses;
+    });
     ctx.enable_accesskit();
     let mut tree = None;
     for output in creation_handoff_frames(&ctx, &mut editor, false)? {
         accept_accessibility_update(&mut tree, &output)?;
     }
     let position = Pos2::new(600., 350.);
+    let pointer = |pressed| Event::PointerButton {
+        pos: position,
+        button: egui::PointerButton::Primary,
+        pressed,
+        modifiers: Modifiers::NONE,
+    };
     let (output, full) = frame_with_platform(
         &ctx,
         &mut editor,
-        vec![
-            Event::PointerMoved(position),
-            Event::PointerButton {
-                pos: position,
-                button: egui::PointerButton::Primary,
-                pressed: true,
-                modifiers: Modifiers::NONE,
-            },
-        ],
+        vec![Event::PointerMoved(position), pointer(true)],
         0.,
         true,
         1.,
@@ -1427,6 +1476,18 @@ fn deferred_first_mount_should_respect_a_new_outside_pointer_action() -> TestRes
     assert!(output.done_requested);
     assert!(!output.cancelled && !output.input.keyboard_captured);
     assert!(ctx.memory(|memory| memory.focused()).is_none());
+    // The host honors Done before the later physical release.
+    let full = finish_headless_frame(ctx.run_ui(
+        RawInput {
+            events: vec![pointer(false)],
+            time: Some(0.05),
+            ..Default::default()
+        },
+        |ui| {
+            ui.label("Card input closed");
+        },
+    ));
+    accept_accessibility_update(&mut tree, &full)?;
     assert_eq!(editor.text(), "Original 😀");
     Ok(())
 }

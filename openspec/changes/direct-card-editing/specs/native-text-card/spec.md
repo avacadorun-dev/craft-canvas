@@ -84,6 +84,6 @@ Native regression evidence SHALL retain and inspect FullOutput platform IME sign
 - **AND** the host SHALL reveal and mount the card before claiming successful text input; culling is not successful authoring.
 
 #### Scenario: A new pointer action follows deferred activation
-- **WHEN** the first deferred mounting pass contains a pointer press outside the card
+- **WHEN** a deferred input receives a completed primary click outside the card, or a primary press when the host uses a press-based focus policy
 - **THEN** ordinary focus loss SHALL remain authoritative and SHALL NOT be mistaken for the earlier creation click
 - **AND** only legacy immediate mounting MAY retain the creating pointer action's focus exemption.
