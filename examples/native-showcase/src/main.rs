@@ -580,11 +580,8 @@ fn main() -> AppResult<()> {
     if source_sha.len() > 64 || scenario != "connections" {
         return Err("Unsupported source identity or capture scenario".into());
     }
-    let purpose = if capture_dir.is_some() {
-        " Verification"
-    } else {
-        ""
-    };
+    let verifying = capture_dir.is_some();
+    let purpose = if verifying { " Verification" } else { "" };
     let app = Showcase::new(source_sha.clone(), capture_dir)?;
     let title = format!(
         "CraftCanvas Showcase{purpose} {}",
@@ -594,6 +591,7 @@ fn main() -> AppResult<()> {
         viewport: egui::ViewportBuilder::default()
             .with_title(&title)
             .with_app_id("dev.craftcanvas.showcase")
+            .with_active(verifying)
             .with_inner_size([1200.0, 900.0])
             .with_min_inner_size([980.0, 760.0]),
         renderer: eframe::Renderer::Wgpu,

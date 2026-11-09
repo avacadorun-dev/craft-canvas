@@ -19,6 +19,7 @@ type CaptureResult<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 const DEADLINE: Duration = Duration::from_secs(45);
 const RETRY: Duration = Duration::from_millis(600);
 const INPUT_TRACE_LIMIT: usize = 512;
+const FOCUS_DEADLINE: Duration = Duration::from_secs(10);
 
 #[derive(Clone, Copy, Default)]
 pub(crate) struct Counters {
@@ -257,6 +258,9 @@ pub(crate) struct Capture {
     captures: Vec<Value>,
     input_trace: Vec<Value>,
     input_trace_dropped: usize,
+    waiting_for_focus: bool,
+    focus_requested: bool,
+    input_failure: Option<&'static str>,
     done: bool,
 }
 impl Capture {
@@ -283,6 +287,9 @@ impl Capture {
             captures: vec![],
             input_trace: vec![],
             input_trace_dropped: 0,
+            waiting_for_focus: true,
+            focus_requested: false,
+            input_failure: None,
             done: false,
         })
     }
@@ -296,6 +303,24 @@ impl Capture {
             input.focused,
             &input.events,
         );
+        if self.done || self.input_failure.is_some() {
+            return;
+        }
+        // A background macOS launch may not receive native focus immediately.
+        // Never invent focus or advance a scripted gesture while it is absent.
+        self.waiting_for_focus = !input.focused
+            || input
+                .events
+                .iter()
+                .any(|event| matches!(event, Event::WindowFocused(false)));
+        if self.waiting_for_focus {
+            if self.last_injected > 0 {
+                self.input_failure = Some(
+                    "Native focus was lost after scripted input began; rerun the isolated verification without competing input",
+                );
+            }
+            return;
+        }
         let Some(observation) = observation else {
             return;
         };
@@ -400,6 +425,22 @@ impl Capture {
         ctx: &egui::Context,
         observation: &Observation,
     ) -> CaptureResult<()> {
+        if let Some(failure) = self.input_failure {
+            return Err(failure.into());
+        }
+        if self.waiting_for_focus {
+            if self.started.elapsed() > FOCUS_DEADLINE {
+                return Err(
+                    "Verification window did not receive native focus; no scripted input was sent"
+                        .into(),
+                );
+            }
+            if !self.focus_requested {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+                self.focus_requested = true;
+            }
+            return Ok(());
+        }
         if self.started.elapsed() > DEADLINE {
             return Err(format!(
                 "Capture deadline at step {}: {:?}",
@@ -658,4 +699,100 @@ fn pointer(point: Pos2, pressed: bool) -> Vec<Event> {
             modifiers: Modifiers::NONE,
         },
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn focus_fixture() -> CaptureResult<(Capture, Observation)> {
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)?
+            .as_nanos();
+        let directory = std::env::temp_dir().join(format!(
+            "craft-canvas-capture-focus-{}-{stamp}",
+            std::process::id()
+        ));
+        let mut capture = Capture::new(directory, "focus-regression", crate::FIXTURE)?;
+        capture.steps = vec![Step::Drag("from", "to")];
+        let app = crate::Showcase::new("focus-regression".into(), None)?;
+        let observation = Observation::new(
+            &app.session,
+            &app.view,
+            FrameSnapshot {
+                targets: BTreeMap::from([
+                    ("from".into(), Pos2::new(10.0, 10.0)),
+                    ("to".into(), Pos2::new(100.0, 10.0)),
+                ]),
+                geometry: Value::Null,
+                errors: vec![],
+                frame: 1,
+            },
+            &Counters::default(),
+            &[],
+            "",
+        );
+        Ok((capture, observation))
+    }
+
+    #[test]
+    fn capture_waits_for_real_focus_without_consuming_the_first_gesture() -> CaptureResult<()> {
+        let (mut capture, observation) = focus_fixture()?;
+        let mut input = RawInput {
+            focused: false,
+            events: vec![Event::WindowFocused(false)],
+            ..Default::default()
+        };
+        capture.inject(&mut input, Some(&observation));
+        assert!(!input.focused);
+        assert_eq!(input.events.len(), 1);
+        assert!(capture.waiting_for_focus);
+        assert_eq!(capture.phase, 0);
+        assert_eq!(capture.last_injected, 0);
+        assert!(capture.input_failure.is_none());
+
+        let mut focused = RawInput {
+            focused: true,
+            events: vec![Event::WindowFocused(true)],
+            ..Default::default()
+        };
+        capture.inject(&mut focused, Some(&observation));
+        assert_eq!(focused.events.len(), 3);
+        assert_eq!(capture.phase, 1);
+        assert_eq!(capture.last_injected, 1);
+        assert!(!capture.waiting_for_focus);
+        std::fs::remove_dir(&capture.directory)?;
+        Ok(())
+    }
+
+    #[test]
+    fn capture_stops_after_focus_loss_even_if_focus_returns() -> CaptureResult<()> {
+        let (mut capture, mut observation) = focus_fixture()?;
+        let mut input = RawInput {
+            focused: true,
+            ..Default::default()
+        };
+        capture.inject(&mut input, Some(&observation));
+        assert_eq!(capture.phase, 1);
+        observation.frame += 1;
+        // A loss and regain in one integration batch must not hide interruption.
+        let mut interrupted = RawInput {
+            focused: true,
+            events: vec![Event::WindowFocused(false), Event::WindowFocused(true)],
+            ..Default::default()
+        };
+        capture.inject(&mut interrupted, Some(&observation));
+        assert_eq!(interrupted.events.len(), 2);
+        assert!(capture.input_failure.is_some());
+        let mut regained = RawInput {
+            focused: true,
+            ..Default::default()
+        };
+        capture.inject(&mut regained, Some(&observation));
+        assert!(regained.events.is_empty());
+        assert_eq!(capture.phase, 1);
+        assert_eq!(capture.last_injected, 1);
+        std::fs::remove_dir(&capture.directory)?;
+        Ok(())
+    }
 }

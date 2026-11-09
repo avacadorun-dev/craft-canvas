@@ -52,3 +52,11 @@ Capture uses only enabled/unclipped header targets, a distinct Verification titl
 ### Pinned egui test API correction
 
 Source `332c58c1c52f1b0c816617a33af8cc5f5d2f47a4`, [run42647241688](https://github.com/avacadorun-dev/craft-canvas/actions/runs/42647241688), failed compilation on all three platforms: two new test harnesses called `Context::style_mut`, which does not exist in pinned egui0.36.2. No regression execution is claimed. The correction uses the public `all_styles_mut` API to disable animation for both themes. Independent review confirmed that assertions, scenarios and acceptance criteria are unchanged; direct rustfmt and whitespace checks passed. The corrected exact source needs hosted and native qualification.
+
+### Qualified host corrections and native focus prerequisite
+
+Source `f41a96e3b83b9841729794b27a34d2865db83c40` passed [run42648099006](https://github.com/avacadorun-dev/craft-canvas/actions/runs/42648099006) on all three platforms: committed lock, formatting, all134 tests, executable named-port example, strict Clippy and native build. The macOS ARM64 archive hash is `1daac27930762e9accce02c141c5e8737fb2980af31a31f4b785d0be4e2e645e`; executable hash is `943f6bdae108b5afbfb24edd7955592202a42501fbb9b9a73e938f2d77f272ea`. Downloaded bytes, lock, architecture and ad-hoc signature matched the hosted manifest.
+
+The first sandboxed native process aborted before UI startup (SIGABRT; no usable capture). A separate permitted native run retained its real baseline readback but failed: the OS reported the window unfocused from frame2, while the driver incorrectly sent its first drag at frames8–11 and waited until the frame bound. There were no root CUA actions during that run; the redacted input trace distinguishes the actual focus signal from the scripted drag. Neither attempt is accepted evidence.
+
+The driver now waits for observed native focus, requests its own Verification window's focus once, and reports a bounded actionable failure if focus never arrives or is lost after input begins. It never forges `RawInput.focused`, resumes an interrupted scripted gesture or changes engine cancellation. Two focused regressions cover startup waiting and loss/regain interruption; all27 journey checks remain intact. Independent source review approved hosted qualification. Fresh exact-source native acceptance is still required.
