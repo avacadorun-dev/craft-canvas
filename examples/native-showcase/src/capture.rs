@@ -704,14 +704,18 @@ fn pointer(point: Pos2, pressed: bool) -> Vec<Event> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    static NEXT_FIXTURE: AtomicUsize = AtomicUsize::new(0);
 
     fn focus_fixture() -> CaptureResult<(Capture, Observation)> {
         let stamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)?
             .as_nanos();
         let directory = std::env::temp_dir().join(format!(
-            "craft-canvas-capture-focus-{}-{stamp}",
-            std::process::id()
+            "craft-canvas-capture-focus-{}-{stamp}-{}",
+            std::process::id(),
+            NEXT_FIXTURE.fetch_add(1, Ordering::Relaxed)
         ));
         let mut capture = Capture::new(directory, "focus-regression", crate::FIXTURE)?;
         capture.steps = vec![Step::Drag("from", "to")];
