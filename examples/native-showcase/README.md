@@ -14,6 +14,8 @@ A pending/refused/conflicting request visibly explains why board editing is paus
 
 The note contains a native text draft, the scene body scrolls, and the third card contains a slider/button. The overlay checkbox covers one connection region with an input exclusion. These are deliberate embedded-input surfaces for independent review, not product features or alternate Canvas implementations.
 
+The host reports text ownership from the clipped native press origin through release, including a whole drag delivered in one frame. Its pre-input hook relinquishes only the exact retained text focus on an outside primary press when no composition or current text/command input would be displaced. It preserves the draft and original event stream. This allows a card drag immediately after editing while keeping text selection inside the native editor.
+
 Redirect stdout when collecting natural interaction evidence. Each canonical revision or pending-state transition emits an `observed-host-state` JSON line with the synthetic canonical data, history and lifecycle observations. Normal mode performs no in-app event injection; the provenance field distinguishes it from capture mode. These records still require the reviewer to identify the actual interaction method.
 
 ## Hosted capture

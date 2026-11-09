@@ -82,6 +82,53 @@ impl Host {
         } else {
             self.observe_ime(&input.events);
         }
+        // egui normally blurs on a completed click. A board drag needs the
+        // deliberate outside press to release only this retained text focus.
+        // Leave all pending text/composition/commands with their current owner.
+        let protected_input = input.events.iter().any(|event| {
+            matches!(
+                event,
+                egui::Event::Text(_)
+                    | egui::Event::Paste(_)
+                    | egui::Event::Ime(_)
+                    | egui::Event::Key { .. }
+                    | egui::Event::Copy
+                    | egui::Event::Cut
+                    | egui::Event::AccessKitActionRequest(_)
+                    | egui::Event::WindowFocused(false)
+                    | egui::Event::PointerGone
+            )
+        });
+        if owned
+            && input.focused
+            && input.viewport_id == egui::ViewportId::ROOT
+            && !self.ime_active
+            && !self.ime_for_frame
+            && !protected_input
+            && let Some(id) = self.text_input_id
+            && let Some(response) = ctx.read_response(id)
+            && response.enabled()
+            && let Some(press) = Self::primary_press(&input.events)
+            && (!response.interact_rect.contains(press)
+                || ctx.layer_id_at(press) != Some(response.layer_id))
+        {
+            ctx.memory_mut(|memory| {
+                if memory.has_focus(id) {
+                    memory.surrender_focus(id);
+                }
+            });
+        }
+    }
+    fn primary_press(events: &[egui::Event]) -> Option<Pos2> {
+        events.iter().find_map(|event| match event {
+            egui::Event::PointerButton {
+                pos,
+                button: egui::PointerButton::Primary,
+                pressed: true,
+                ..
+            } => Some(*pos),
+            _ => None,
+        })
     }
 }
 impl CanvasViewHost for Host {
@@ -120,8 +167,24 @@ impl CanvasViewHost for Host {
                 [rect.width(), 86.0],
                 egui::TextEdit::multiline(&mut self.draft).id_salt("synthetic-draft"),
             );
-            pointer =
-                response.is_pointer_button_down_on() || response.clicked() || response.dragged();
+            // A whole selection drag may arrive in one frame. Its final response
+            // can be outside and no longer down, but its original native press
+            // still belongs to this exact clipped text widget through release.
+            let pressed_here = child
+                .input(|input| Self::primary_press(&input.events))
+                .is_some_and(|press| {
+                    response.enabled()
+                        && response
+                            .interact_rect
+                            .intersect(child.clip_rect())
+                            .contains(press)
+                        && child.ctx().layer_id_at(press) == Some(response.layer_id)
+                });
+            pointer = pressed_here
+                || response.is_pointer_button_down_on()
+                || response.clicked()
+                || response.dragged()
+                || response.drag_stopped();
             keyboard = response.has_focus();
             self.text_input_id = Some(response.id);
             if keyboard {

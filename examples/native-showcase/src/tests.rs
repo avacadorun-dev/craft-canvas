@@ -596,3 +596,95 @@ fn ordinary_geometry_ends_at_release_and_never_reuses_embedded_text_drag() -> Te
     assert!(!harness.app.view.has_gesture());
     Ok(())
 }
+
+#[test]
+fn outside_drag_keeps_pending_text_and_composition_with_the_actual_editor() -> TestResult {
+    let mut harness = ShowcaseHarness::new(false)?;
+    let text_id = harness
+        .app
+        .host
+        .text_input_id
+        .ok_or("actual text input ID")?;
+    let text = harness
+        .ctx
+        .read_response(text_id)
+        .ok_or("actual text input")?
+        .rect
+        .center();
+    harness.frame(pointer(text, true))?;
+    harness.frame(pointer(text, false))?;
+    let outside = note_rect(&harness)?.min + Vec2::new(180.0, 200.0);
+    let outside_drag = || {
+        let mut events = pointer(outside, true);
+        events.push(Event::PointerMoved(outside + Vec2::new(30.0, 15.0)));
+        events.extend(pointer(outside + Vec2::new(30.0, 15.0), false));
+        events
+    };
+    let mut text_batch = vec![Event::Text(" pending input preserved".into())];
+    text_batch.extend(outside_drag());
+    harness.frame(text_batch)?;
+    assert!(harness.app.host.draft.contains("pending input preserved"));
+    assert!(harness.ctx.memory(|memory| memory.has_focus(text_id)));
+    assert_eq!(harness.app.session.document().raw_json(), FIXTURE);
+
+    harness.frame(vec![Event::Ime(egui::ImeEvent::Preedit {
+        text: "合成".into(),
+        active_range_chars: None,
+    })])?;
+    let composing_draft = harness.app.host.draft.clone();
+    assert!(harness.app.host.ime_active);
+    harness.frame(outside_drag())?;
+    assert!(harness.app.host.ime_active);
+    assert!(harness.ctx.memory(|memory| memory.has_focus(text_id)));
+    assert_eq!(harness.app.host.draft, composing_draft);
+    assert_eq!(harness.app.session.document().raw_json(), FIXTURE);
+
+    let mut commit_batch = vec![Event::Ime(egui::ImeEvent::Commit("語".into()))];
+    commit_batch.extend(outside_drag());
+    harness.frame(commit_batch)?;
+    assert!(harness.app.host.draft.contains('語'));
+    assert!(!harness.app.host.ime_active && harness.app.host.ime_for_frame);
+    assert_eq!(harness.app.session.document().raw_json(), FIXTURE);
+    assert_eq!(harness.app.session.history_usage().undo_steps, 0);
+    assert_eq!(harness.app.counters.intents, 0);
+
+    harness.frame(vec![Event::Ime(egui::ImeEvent::Preedit {
+        text: "取消".into(),
+        active_range_chars: None,
+    })])?;
+    assert!(harness.app.host.ime_active);
+    let mut cancellation = vec![Event::Ime(egui::ImeEvent::Preedit {
+        text: String::new(),
+        active_range_chars: None,
+    })];
+    cancellation.extend(outside_drag());
+    harness.frame(cancellation)?;
+    assert!(!harness.app.host.ime_active && harness.app.host.ime_for_frame);
+    assert!(harness.ctx.memory(|memory| memory.has_focus(text_id)));
+    assert_eq!(harness.app.session.document().raw_json(), FIXTURE);
+    assert_eq!(harness.app.counters.intents, 0);
+    let preserved_draft = harness.app.host.draft.clone();
+    let before = harness
+        .app
+        .session
+        .document()
+        .node("a")
+        .ok_or("note")?
+        .bounds();
+    harness.frame(outside_drag())?;
+    let after = harness
+        .app
+        .session
+        .document()
+        .node("a")
+        .ok_or("note")?
+        .bounds();
+    assert!(!harness.app.host.ime_for_frame);
+    assert!(!harness.ctx.memory(|memory| memory.has_focus(text_id)));
+    assert_eq!(after.x, before.x + 30.0);
+    assert_eq!(after.y, before.y + 15.0);
+    assert_eq!(harness.app.host.draft, preserved_draft);
+    assert_eq!(harness.app.session.history_usage().undo_steps, 1);
+    assert_eq!(harness.app.counters.intents, 1);
+    Ok(())
+}
