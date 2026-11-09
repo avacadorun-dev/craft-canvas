@@ -2,6 +2,12 @@
 
 Date: 2026-11-09. Status: **independent designer proposal; owner review pending**.
 
+The four-card v1 composition below is historical. The later full-board breadth
+correction supersedes it as the representative design reference. See
+[Revision v2](#revision-v2--mixed-content-boards) for the current proposal, complete
+capability placement map and remaining design work. Neither revision is compiled
+UI or accepted native functionality.
+
 The previous designer references covered the editor. They did not establish the
 appearance of a board inside WriterCraft. This is the first explicit board
 composition proposal. Neither the approved editor direction nor a running
@@ -158,3 +164,167 @@ This verifies only the reference presentation. Native rendering, real drag
 gestures, accessibility, localization catalogs, persistence and performance remain
 unverified by this concept. No Rust code, application behavior, engine dependency,
 build, release or existing preview was changed to produce it.
+
+## Revision v2 — mixed-content boards
+
+The three private original-Studio screenshots supplied later on 2026-11-09 show a
+substantially broader workspace than the v1 graph: multiple named frames, nested
+groups, typed/status cards, labeled relations, drawn objects and shapes, images,
+PDF, audio/video controls, URL and other-board cards, tool groups and a minimap.
+These screenshots were inspected locally; neither the screenshots nor their
+project text/media were copied into the public repository or the concept. Visible
+objects establish presentation evidence, not every creation/edit/save operation.
+The source-backed B01–B26 consumer contract remains the functional authority.
+
+**Correction:** a visually restrained board must retain this breadth. A cleaner
+toolbar cannot mean fewer object families or missing professional workflows.
+The previous four-card composition is insufficient as a reference for the
+complete board. It remains useful only for its explicitly bounded interaction
+states. This correction does not start another active implementation issue;
+CC-03 continues to own direct connection input and recovery.
+
+### Current composition
+
+`canvas-design-direction-v2.html` is a separate, synthetic concept, preserving v1.
+It depicts the same native WriterCraft shell with two board states:
+
+- **Research and media:** nine content objects in two named frames: an original
+  synthetic station illustration, two notes, PDF, audio, video, URL, other-board
+  reference and unavailable external-file fallback. Rectangle, ellipse and pen
+  stroke objects remain visible alongside three labeled relations.
+- **Story and connections:** eight content objects across two named frames,
+  including document references, independent notes, dialogue/state labels and an
+  other-board reference. A nested group contains two alternatives. Five labeled
+  relations, a diamond, rectangle, ellipse and drawn arrow show mixed composition.
+
+The content and vector art are newly authored fictional examples. Media transport
+is illustrative; no audio/video playback, PDF decoding or filesystem/network
+operation occurs in the reference. The external-file card demonstrates an inert,
+unresolved reference and an actionable host recovery placement, not automatic
+access to a path.
+
+The model of access is deliberately small:
+
+1. The shared application chrome retains project context, search and assistant.
+2. The board row holds identity, view selection, Add and board actions. Add contains
+   existing content families and template access, rather than another permanent
+   row of buttons.
+3. A six-entry tool rail holds selection, pan, drawing tools, shapes, frame and
+   objects/layers. Drawing reveals pen/highlighter/eraser; shapes reveal the five
+   original shape families. These are groups, not removal of their alternatives.
+4. Selection reveals a compact context row with Edit, Properties and object
+   actions. Properties is disclosed only on request. Copy/Cut/Duplicate,
+   alignment, color, layering, locking, promotion and Delete retain contextual
+   placement and keyboard equivalents. Commands must be enabled only for their
+   valid object kind/selection in the real host.
+5. A quiet minimap and zoom/fit cluster retain spatial navigation. These may
+   collapse in a small real window only with a visible recovery command.
+
+The v2 concept currently collapses the project sidebar below its review breakpoint
+and stacks content at narrow conversation widths. This is **reference reflow only**,
+not permission to rearrange a native canonical board when a window is resized.
+Real camera/selection and document order remain unchanged by presentation.
+
+### B01–B26 placement and outstanding depth
+
+“Shown” below means a design reference, not implementation or acceptance. A named
+menu location alone does not complete its dialog or workflow. Existing source
+contracts and the consumer handoff retain every lifecycle/preservation obligation.
+
+| Baseline | Placement in v2 | Still required before native acceptance |
+| --- | --- | --- |
+| B01 — text/GFM | Add → Card; selected note Edit and double-click; local editable concept field | Full GFM and native selection/clipboard/IME, retained drafts, cancel, history and reopen. |
+| B02 — document references/promotion | Visually distinct document cards with exact-target action; selection overflow → Promote | Define no new synchronization semantics. Actual target identity, explicit promotion, document editing and return-context evidence. |
+| B03 — URL | URL card with source/domain; Add → Web link | Preview loading/failure, editing, deliberate authorized opening and original URL preservation. |
+| B04 — images | Image object with selected resize grips; disclosed size property | Direct native resizing, aspect constraints/cancellation, original bytes, history and reopen. The concept size slider only demonstrates presentation. |
+| B05 — PDF | Paper body, file identity and page controls; local synthetic page switch | Native decode/cache, page ownership at pan/zoom, stored page state and unavailable/corrupt recovery. |
+| B06 — audio/video | Distinct media bodies, bounded transport and file labels | Actual native play/pause/seek, input ownership, lifetime, original bytes and reopen. No playback is claimed from this reference. |
+| B07 — drop | Existing content families share Add destinations | Still design and verify OS/project drag previews, accurate zoomed placement, invalid/outside drop and cancellation. |
+| B08 — ink | Visible pen stroke; grouped drawing entry | Native pen/highlighter/eraser tools, selection/erase semantics, cancel, history and exact retained strokes. |
+| B09 — shapes | Rectangle, ellipse, diamond and drawn arrow; grouped shapes entry | All five original kinds including line; direct creation, re-editing, resize/rotation and style controls. |
+| B10 — groups/frames | Named frames and nested group; Add and frame tool | Distinct move/content semantics, nesting, group lifecycle, frame presentation ordering and persistence. |
+| B11 — transforms | Handles, image resize state, select/pan tools | Actual move, multi-select, resize, rotate, overlap hit rules and cancellation; concept cards do not implement dragging. |
+| B12 — structured clipboard | Selection overflow with Copy/Cut/Duplicate | Paste and keyboard/menu/context equivalence, mixed-record bundles, fresh IDs, internal edges and resource mappings. |
+| B13 — style/lock/layers | Typed/color variation; object overflow and Objects/Layers entry | Complete styles, lock feedback and enforcement, reorder/paint/hit agreement and reopen. |
+| B14 — alignment | Selection overflow → Align/distribute | Full alignment/distribution/tidy property surface, locks, preview as applicable, cancel and one atomic history action. |
+| B15 — connections/labels | Visible ports, labeled relations and consistent routing | Direct create/reconnect, selected-edge context/label editing, endpoint grips, invalid/pending/recovery, history and stable identity. V1 state detail remains a bounded reference, not a passed gesture. |
+| B16 — types/schemas | Card type/status labels; Properties; board menu → Types and fields | Existing project-wide schema editor, custom choices/fields, compatible defaults and schema migration. Illustrative labels are not a new mandatory taxonomy. |
+| B17 — templates | Add → From template | All fifteen original templates and their chooser/content/schema workflows remain required; not all illustrated. |
+| B18 — views/filters | Board view menu names Free, Mind-map, Timeline, Swimlane, Dependency and filters | Design and verify each projection and filter, retained view state, exact canonical graph and safe return. Menu labels are not those view implementations. |
+| B19 — layout | Board menu → Suggest layout | Disposable preview with separate Apply/Cancel, lock awareness, stale handling and exact geometry Undo. |
+| B20 — navigation/diagnostics | Search, Objects/Layers and board-menu diagnostics | Search result/diagnostic panels, exact target reveal, keyboard navigation, missing-target behavior and focus return. |
+| B21 — playthrough | Board menu → Check playthrough; dialogue/state examples | Full dialogue/quest/state traversal interfaces, branches, invalid transitions and non-mutating exit; not simulated by card labels. |
+| B22 — presentation/timer | Board menu → Presentation and timer; named frames | Presentation/timer controls, progress/pause/exit and prior camera/focus restoration. |
+| B23 — board lifecycle | Board menu → Rename/Duplicate/Trash; project trash | Complete valid/invalid/cancelled/failed lifecycle, restore, referenced targets, original/copy identities and history. |
+| B24 — editable transfer | Board menu → Import/export .canvas | File dialogs, progress/errors, exact compatible data and editable round-trip; a rendered picture is not a backup. |
+| B25 — output | Board menu → Image/PDF | PNG/SVG/PDF options, bounded export, mixed-media rendering, fonts/clipping, cancel and failure. |
+| B26 — history/recovery | Shared history/shortcut expectation; input ownership remains explicit | Current pending/conflict/discard correction, text vs board history, durable save state, exact drafts, failures, retries and reopen. No Save-success state is invented in the concept. |
+
+Supplemental source omissions reconciled by the root remain required:
+
+- Other-board resource cards open the exact referenced board. Import/transfer
+  remapping and missing/trashed targets need evidence; neither recursive embedded
+  boards nor a dedicated source creation button is inferred. A convenient proposed
+  Add location is presentation, not proof that the original used that location.
+- External-file fallback remains an inert preserved path/reference. Unresolved
+  records need honest presentation and authorized recovery; the engine does not
+  gain arbitrary filesystem access.
+- Canvas assistant context and guarded proposals/promotion retain an entry in the
+  shared assistant. Source-backed ghost preview belongs to the **separate review
+  page**, followed by explicit Apply/Reject/Undo. No on-board ghost overlay is
+  claimed as verified baseline or made a new automatic requirement. This full
+  review journey is not designed by the assistant icon alone.
+
+### Review criteria updated after the breadth correction
+
+Before accepting a consuming WriterCraft board, the independent designer must use
+a mixed-content synthetic board comparable in breadth to v2, then complete the
+applicable lifecycle of the active B slice. Inspect group/frame behavior alongside
+normal cards; image sizing alongside actual PDF/audio/video control ownership;
+shape/ink editing alongside edge selection; document/board/URL/file references
+alongside missing-resource recovery. A text-only graph cannot qualify media,
+drawings, custom schemas, views, export, assistant proposals or playthrough.
+
+Ensure every original tool remains discoverable through the compact groups and
+contextual routes. A reduction in permanent chrome must not move every ordinary
+action into a distant command palette. Direct drag, double-click, selected-object
+controls and conventional keyboard actions stay primary. Reopen and failed/stale
+operations must retain data and drafts. The strict library issue order and exact
+qualified application handoff are unchanged.
+
+### V2 presentation verification
+
+The v2 fragment was rendered in an isolated headless Chrome profile, without
+opening or replacing either running native preview. Captures cover research and
+story states in dark appearance, research in light appearance, selected image
+properties, inline note editing and Add menu. A 320-pixel outer preview produced a
+288-pixel inner reference; a 1024-pixel outer preview produced 992 inner pixels.
+Both checked widths had no horizontal overflow. The research state contained nine
+content objects and three canonical relation illustrations; the story state eight
+objects and five relations. Native board spatial layout is not inferred from the
+narrow reference reflow.
+
+Local concept checks exercised selection, Properties, image reduction to 70%,
+synthetic PDF page 2/3, switching board state, note editing and Escape. No JavaScript
+exceptions were observed. Reference defects found during this check were fixed:
+restoring preview state had cleared selection; relation labels were squeezed into
+insufficient gaps; narrow reference reflow routed longer connections behind
+intermediate cards. Narrow routes now use the side gutter. These are
+reference-presentation repairs, not Rust bug fixes.
+
+Files remain in the authorized conversation visualization directory:
+`canvas-design-direction-v2.html`, `canvas-design-v2-preview.html` and
+`canvas-design-v2-*.png`. The original `canvas-design-direction.html` is unchanged.
+These are not application captures, user-validation sessions, a native gate or
+proof of media playback/accessibility/persistence. Root owns publishing this
+documentation and continuing CC-03; no Rust or application file was edited here.
+
+Exact local reference receipt:
+
+- `canvas-design-direction-v2.html` SHA-256:
+  `fd8cfc0172ef9b149a5aecd26914472a73c64b88f4ba77ec2cb2375eaec0cb34`.
+- `canvas-design-v2-checks.json` SHA-256:
+  `110706a9205cb497668d8943f17464ac903b054272e9cdb70eee23d0f6577714`.
+
+This receipt binds the inspected proposal only. The isolated renderer was stopped
+after the checks; no user preview or existing browser profile was replaced.
