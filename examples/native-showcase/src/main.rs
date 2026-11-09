@@ -352,6 +352,9 @@ impl Showcase {
     }
     fn header(&mut self, ui: &mut Ui, targets: &mut BTreeMap<String, Pos2>) {
         ui.heading("CraftCanvas Showcase");
+        if self.capture.is_some() {
+            ui.label("Automated verification: scripted input only in this test window.");
+        }
         ui.label("Drag a card header to move it. Drag between ports to connect. Select an edge to reconnect; press Delete to remove a selection.");
         let pending = self.view.connection_pending();
         let rejected = matches!(
@@ -529,7 +532,7 @@ impl Showcase {
                 "{}",
                 json!({
                     "kind":"observed-host-state","source_sha":self.source_sha,
-                    "input_provenance":if self.capture.is_some() {"scripted RawInput plus unmodified upstream input; see capture input trace"} else {"native window events; no in-app injection"},
+                    "input_provenance":if self.capture.is_some() {"isolated scripted RawInput; native focus/readback preserved; see capture input policy and trace"} else {"native window events; no in-app injection"},
                     "observed_state":observation.state,
                 })
             );
@@ -540,10 +543,10 @@ impl Showcase {
 
 impl eframe::App for Showcase {
     fn raw_input_hook(&mut self, ctx: &egui::Context, input: &mut egui::RawInput) {
-        self.host.prepare_input(ctx, input);
         if let Some(capture) = &mut self.capture {
             capture.inject(input, self.observation.as_ref());
         }
+        self.host.prepare_input(ctx, input);
     }
     fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
         self.show(ui);
