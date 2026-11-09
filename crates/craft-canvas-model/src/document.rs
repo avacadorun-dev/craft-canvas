@@ -331,7 +331,12 @@ impl Side {
             },
         }
     }
-    fn parse(value: Option<String>) -> Result<Option<Self>> {
+    fn parse(fields: &RawMap, key: &str) -> Result<Option<Self>> {
+        let value = fields
+            .get(key)
+            .map(|raw| serde_json::from_str::<Option<String>>(raw.get()))
+            .transpose()?
+            .flatten();
         match value.as_deref() {
             None | Some("") => Ok(None),
             Some("top") => Ok(Some(Self::Top)),
@@ -426,8 +431,8 @@ impl EdgeRecord {
         valid_id(&from, limits)?;
         let to = required_string(&fields, "toNode")?;
         valid_id(&to, limits)?;
-        let from_side = Side::parse(optional_string(&fields, "fromSide")?)?;
-        let to_side = Side::parse(optional_string(&fields, "toSide")?)?;
+        let from_side = Side::parse(&fields, "fromSide")?;
+        let to_side = Side::parse(&fields, "toSide")?;
         for key in ["fromEnd", "toEnd"] {
             if let Some(end) = optional_string(&fields, key)?
                 && !["", "none", "arrow"].contains(&end.as_str())
