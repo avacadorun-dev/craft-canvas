@@ -23,3 +23,9 @@ Candidate `4a4f94f3bacca12bf4edf7c19e51ea6a965fee33` started [run42640744601](ht
 The reviewed result contains377 packages, adding294 for the native showcase while retaining every previous name/version pair. Eframe/egui0.36.2, image0.25.10 and existing library pins are unchanged. All declared MSRVs fit Rust1.95. All external sources are registry packages; the declared licenses provide permissive alternatives, with the existing font/Unicode notices retaining their additional terms. This metadata inspection is not package-release qualification.
 
 Exact hosted lock SHA256: `5a833ea74faaa3b70ecad110472537687a850ff0bb4fd72ac481f0d7447f44d0`. The next committed source must pass the complete locked hosted checks and native artifact review.
+
+## First locked qualification
+
+Source `b09991368de719dcc3ea7a890a830ca38e35dda7`, [run42641033946](https://github.com/avacadorun-dev/craft-canvas/actions/runs/42641033946): committed-lock verification passed. Linux passed all128 workspace tests and the executable headless named-port example. Strict Clippy stopped on two equivalent-form suggestions in port geometry (`collapsible_if`, `nonminimal_bool`). The follow-up combines the same short-circuit conditions and replaces negated `is_some_and` with the equivalent `is_none_or`; tests and behavior are unchanged. Other platform outcomes and exact native acceptance remain pending at this record.
+
+Windows also passed all128 workspace tests and the headless example, then reported the same two Clippy suggestions. The queued macOS job is superseded when the reviewed correction is pushed; it supplies no native evidence.

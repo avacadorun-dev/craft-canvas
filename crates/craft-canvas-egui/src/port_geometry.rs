@@ -233,15 +233,13 @@ impl PortFrame {
                 work.charge(1)?;
                 if let Some(port) =
                     frame.visible_port(node.id(), binding, anchor, frame.config.port_radius)?
-                {
-                    if frame
+                    && frame
                         .occlusion
                         .topmost(port.center, work)?
                         .is_none_or(|top| top <= order)
-                    {
-                        frame.ports.push(port);
-                        frame.port_orders.push(order);
-                    }
+                {
+                    frame.ports.push(port);
+                    frame.port_orders.push(order);
                 }
             }
         }
@@ -419,11 +417,11 @@ impl PortFrame {
                 .get(&handle.original.node_id)
                 .map(|node| node.order);
             if handle.hit_rect.is_positive()
-                && !self
+                && self
                     .occlusion
                     .topmost(handle.center, work)?
                     .zip(order)
-                    .is_some_and(|(top, own)| top > own)
+                    .is_none_or(|(top, own)| top <= own)
             {
                 visible.push(handle);
             }
