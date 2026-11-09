@@ -17,7 +17,7 @@ impl Harness {
     fn new() -> TestResult<Self> {
         let limits = CanvasLimits::default();
         let ctx = egui::Context::default();
-        ctx.style_mut(|style| style.animation_time = 0.0);
+        ctx.all_styles_mut(|style| style.animation_time = 0.0);
         Ok(Self {
             ctx,
             view: CanvasView::default(),
@@ -194,7 +194,7 @@ struct ShowcaseHarness {
 impl ShowcaseHarness {
     fn new(testing: bool) -> TestResult<Self> {
         let ctx = egui::Context::default();
-        ctx.style_mut(|style| style.animation_time = 0.0);
+        ctx.all_styles_mut(|style| style.animation_time = 0.0);
         // Exercise the normal single-pass boundary: the header paints before
         // the canvas release prepares a candidate later in that same pass.
         ctx.options_mut(|options| options.max_passes = std::num::NonZeroUsize::MIN);

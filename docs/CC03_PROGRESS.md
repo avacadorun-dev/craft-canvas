@@ -48,3 +48,7 @@ Issue3 stays open. Full native acceptance, designer review and consumer adoption
 The follow-up keeps the engine's guarded ownership/acknowledgement contract and fixes the synthetic host: actual scroll responses own pointer input; normal mode applies immediately with direct-manipulation help and Undo/Redo; testing controls are collapsed; a pending/conflict explanation and explicit Discard pending remain reachable. Discard cancels/rejects the host-owned held candidate before clearing presentation and changes no canonical data/history.
 
 Capture uses only enabled/unclipped header targets, a distinct Verification title and a bounded redacted upstream/scripted input trace. All27 journey steps and checks remain intact. Six focused host/header/privacy regressions were added. Independent source re-review found no blockers; exact hosted execution and fresh native acceptance remain pending.
+
+### Pinned egui test API correction
+
+Source `332c58c1c52f1b0c816617a33af8cc5f5d2f47a4`, [run42647241688](https://github.com/avacadorun-dev/craft-canvas/actions/runs/42647241688), failed compilation on all three platforms: two new test harnesses called `Context::style_mut`, which does not exist in pinned egui0.36.2. No regression execution is claimed. The correction uses the public `all_styles_mut` API to disable animation for both themes. Independent review confirmed that assertions, scenarios and acceptance criteria are unchanged; direct rustfmt and whitespace checks passed. The corrected exact source needs hosted and native qualification.
