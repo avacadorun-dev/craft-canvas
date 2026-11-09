@@ -39,10 +39,10 @@ The same native card editor SHALL accept input on its first mounted frame while 
 
 ### Requirement: DCE-4 native creation-frame input ownership
 
-The host SHALL activate inline focus in the frame that creates or opens the card and route raw input through the retained editor before egui processes focus navigation. Repeated same-widget focus requests SHALL NOT interrupt native composition. The pre-input hook SHALL leave text, paste and IME events unchanged.
+The host SHALL arm inline activation in the frame that creates or opens the card and grant focus from the captured owner in the next matching unblocked pre-input hook, before egui processes text or focus navigation. The completed creation frame SHALL NOT advertise focus on an input absent from its accessibility tree. Repeated same-widget focus requests SHALL NOT interrupt native composition. The pre-input hook SHALL leave text, paste and IME events unchanged.
 
 #### Scenario: First native composition reaches a newly mounted card
-- **WHEN** creation-frame focus is followed by first-mounted Preedit/Escape, insertion acknowledgement and Commit
+- **WHEN** creation-frame activation is followed by first-mounted Preedit/Escape, insertion acknowledgement and Commit
 - **THEN** the same native editor SHALL retain composition and selection without requesting platform IME interruption
 - **AND** the IME Escape SHALL NOT become card Cancel or board input.
 
@@ -69,3 +69,21 @@ Native regression evidence SHALL retain and inspect FullOutput platform IME sign
 - **WHEN** a valid non-composing card Cancel is queued before mounting and text or paste arrives in the same batch
 - **THEN** the native input SHALL immediately render read-only, preserve the exact draft, retain keyboard ownership and emit only one Cancel without Done or focus reacquisition
 - **AND** current-frame IME events SHALL retain composition precedence rather than freezing or cancelling the native input.
+
+
+#### Scenario: Activation happens after the board has already painted
+- **WHEN** a create/edit intent is handled after the board's current painting pass
+- **THEN** activation SHALL arm the retained editor without publishing a dangling AccessKit focus ID
+- **AND** the next eligible native input batch SHALL reach the same real editor without an insertion acknowledgement wait or event replay
+- **AND** actual AccessKit consumer updates SHALL remain valid through creation, first input, acknowledgement and Done/Cancel.
+
+#### Scenario: Activation no longer owns the next input
+- **WHEN** another field has acquired focus, a modal blocks input, the viewport differs, or the native window is unfocused
+- **THEN** activation SHALL NOT override that ownership or consume its input
+- **AND** an unmounted editor SHALL NOT leave a nonexistent node focused in the accessibility tree
+- **AND** the host SHALL reveal and mount the card before claiming successful text input; culling is not successful authoring.
+
+#### Scenario: A new pointer action follows deferred activation
+- **WHEN** the first deferred mounting pass contains a pointer press outside the card
+- **THEN** ordinary focus loss SHALL remain authoritative and SHALL NOT be mistaken for the earlier creation click
+- **AND** only legacy immediate mounting MAY retain the creating pointer action's focus exemption.

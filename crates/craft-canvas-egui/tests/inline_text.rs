@@ -73,6 +73,16 @@ fn frame_with_platform(
 
 /// A real prior input and creation command; the new card has not been painted yet.
 fn creation_handoff(ctx: &Context, editor: &mut TextCardEditor) -> TestResult {
+    creation_handoff_frames(ctx, editor, false)?;
+    Ok(())
+}
+
+fn creation_handoff_frames(
+    ctx: &Context,
+    editor: &mut TextCardEditor,
+    mount_during_creation: bool,
+) -> std::result::Result<Vec<egui::FullOutput>, Box<dyn std::error::Error>> {
+    let mut frames = Vec::new();
     let mut previous_text = String::from("Previous input");
     let previous_id = egui::Id::new("previous-input");
     let mut activation = None;
@@ -96,15 +106,24 @@ fn creation_handoff(ctx: &Context, editor: &mut TextCardEditor) -> TestResult {
                     ui.add(egui::TextEdit::singleline(&mut previous_text).id(previous_id));
                     if ui.input_mut(|input| input.consume_key(Modifiers::COMMAND, Key::N)) {
                         activation = Some(editor.begin_inline(ui.ctx()));
+                        if mount_during_creation {
+                            let rect =
+                                Rect::from_min_size(Pos2::new(40., 40.), Vec2::new(300., 180.));
+                            ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
+                                editor.show_inline(ui, rect, 1.);
+                            });
+                        }
                     }
                 });
             },
         ));
         // A real prior text input enabled native IME before the creation handoff.
         assert!(full.platform_output.ime.is_some());
+        assert_eq!(ctx.memory(|memory| memory.focused()), Some(previous_id));
+        frames.push(full);
     }
     activation.ok_or("creation command was not handled")??;
-    Ok(())
+    Ok(frames)
 }
 
 #[test]
@@ -889,6 +908,8 @@ fn initial_arrow_should_move_the_caret_without_moving_focus_to_a_neighbor() -> T
     *editor.text_mut() = "ab".into();
     let ctx = Context::default();
     creation_handoff(&ctx, &mut editor)?;
+    // A pre-input hook can run more than once before the first visible mount.
+    editor.prepare_inline_input(&ctx, &mut RawInput::default(), false);
     let card_id = ctx.memory(|memory| memory.focused()).ok_or("card focus")?;
     navigation_frame(
         &ctx,
@@ -1108,5 +1129,304 @@ fn current_frame_ime_should_override_a_deferred_cancel_without_freezing_native_i
             .ok_or("native IME output")?
             .should_interrupt_composition
     );
+    Ok(())
+}
+
+struct AccessibilityChanges;
+impl accesskit_consumer::ChangeHandler for AccessibilityChanges {
+    fn node_added(&mut self, _node: &accesskit_consumer::Node<'_>) {}
+    fn node_updated(
+        &mut self,
+        _old: &accesskit_consumer::Node<'_>,
+        _new: &accesskit_consumer::Node<'_>,
+    ) {
+    }
+    fn focus_moved(
+        &mut self,
+        _old: Option<&accesskit_consumer::Node<'_>>,
+        _new: Option<&accesskit_consumer::Node<'_>>,
+    ) {
+    }
+    fn node_removed(&mut self, _node: &accesskit_consumer::Node<'_>) {}
+}
+
+fn accept_accessibility_update(
+    tree: &mut Option<accesskit_consumer::Tree>,
+    output: &egui::FullOutput,
+) -> TestResult {
+    let update = output
+        .platform_output
+        .accesskit_update
+        .clone()
+        .ok_or("AccessKit update")?;
+    let focus = update.focus;
+    let tree_id = update.tree_id;
+    if let Some(tree) = tree {
+        tree.update_and_process_changes(update, &mut AccessibilityChanges);
+    } else {
+        *tree = Some(accesskit_consumer::Tree::new(update, true));
+    }
+    let state = tree.as_ref().ok_or("AccessKit consumer")?.state();
+    assert!(state.node_by_tree_local_id(focus, tree_id).is_some());
+    assert!(state.focus().is_some());
+    Ok(())
+}
+
+#[test]
+fn late_activation_should_keep_accesskit_focus_valid_before_first_unicode_input() -> TestResult {
+    for mount_during_creation in [false, true] {
+        let session = session()?;
+        let mut editor = TextCardEditor::pending_insertion(&session, pending_node(&session)?)?;
+        let ctx = Context::default();
+        ctx.enable_accesskit();
+        let mut tree = None;
+        for output in creation_handoff_frames(&ctx, &mut editor, mount_during_creation)? {
+            accept_accessibility_update(&mut tree, &output)?;
+        }
+        let (output, full) = frame_with_platform(
+            &ctx,
+            &mut editor,
+            vec![
+                Event::Text("日本語 e\u{301} ".into()),
+                Event::Paste("🪶 pasted".into()),
+            ],
+            0.,
+            true,
+            1.,
+            true,
+        );
+        accept_accessibility_update(&mut tree, &full)?;
+        assert!(output.changed && output.input.keyboard_captured);
+        assert!(!output.done_requested && !output.cancelled);
+        assert_eq!(editor.text(), "日本語 e\u{301} 🪶 pasted");
+        assert_eq!(
+            tree.as_ref()
+                .ok_or("AccessKit tree")?
+                .state()
+                .focus_in_tree()
+                .role(),
+            egui::accesskit::Role::MultilineTextInput,
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn late_activation_should_keep_accesskit_and_ime_valid_through_ack_and_dismissal() -> TestResult {
+    for dismiss in [Key::Escape, Key::Enter] {
+        let mut session = session()?;
+        let mut editor = TextCardEditor::pending_insertion(&session, pending_node(&session)?)?;
+        let ctx = Context::default();
+        ctx.enable_accesskit();
+        let mut tree = None;
+        for output in creation_handoff_frames(&ctx, &mut editor, false)? {
+            accept_accessibility_update(&mut tree, &output)?;
+        }
+        let (output, full) = frame_with_platform(
+            &ctx,
+            &mut editor,
+            vec![
+                Event::Ime(egui::ImeEvent::Preedit {
+                    text: "にほん".into(),
+                    active_range_chars: Some(0..3),
+                }),
+                key(Key::Escape, Modifiers::NONE),
+            ],
+            0.,
+            true,
+            1.,
+            true,
+        );
+        accept_accessibility_update(&mut tree, &full)?;
+        assert!(output.composing && output.input.keyboard_captured);
+        assert!(!output.cancelled && !output.done_requested);
+        assert!(
+            !full
+                .platform_output
+                .ime
+                .ok_or("first native IME output")?
+                .should_interrupt_composition
+        );
+        session.apply(insert_pending(&session, pending_node(&session)?)?)?;
+        editor.acknowledge_insertion(&session)?;
+        let (_, full) = frame_with_platform(
+            &ctx,
+            &mut editor,
+            vec![Event::Ime(egui::ImeEvent::Commit("日本語".into()))],
+            1.,
+            true,
+            1.,
+            true,
+        );
+        accept_accessibility_update(&mut tree, &full)?;
+        assert!(
+            !full
+                .platform_output
+                .ime
+                .ok_or("committed native IME output")?
+                .should_interrupt_composition
+        );
+        assert_eq!(editor.text(), "日本語");
+        let modifiers = if dismiss == Key::Enter {
+            Modifiers::COMMAND
+        } else {
+            Modifiers::NONE
+        };
+        let (output, full) = frame_with_platform(
+            &ctx,
+            &mut editor,
+            vec![key(dismiss, modifiers)],
+            2.,
+            true,
+            1.,
+            true,
+        );
+        accept_accessibility_update(&mut tree, &full)?;
+        assert_eq!(output.cancelled, dismiss == Key::Escape);
+        assert_eq!(output.done_requested, dismiss == Key::Enter);
+        let full = finish_headless_frame(ctx.run_ui(RawInput::default(), |ui| {
+            ui.label("Card input closed");
+        }));
+        accept_accessibility_update(&mut tree, &full)?;
+        assert!(ctx.memory(|memory| memory.focused()).is_none());
+    }
+    Ok(())
+}
+
+#[test]
+fn unmounted_pre_input_activation_should_not_leave_dangling_accesskit_focus() -> TestResult {
+    let session = session()?;
+    let mut editor = TextCardEditor::new(&session, "a")?;
+    let ctx = Context::default();
+    ctx.enable_accesskit();
+    let mut tree = None;
+    for output in creation_handoff_frames(&ctx, &mut editor, false)? {
+        accept_accessibility_update(&mut tree, &output)?;
+    }
+    let mut raw = RawInput::default();
+    editor.prepare_inline_input(&ctx, &mut raw, false);
+    // Even a host that omits the promised mount cannot emit a nonexistent focus node.
+    let full = finish_headless_frame(ctx.run_ui(raw, |ui| {
+        ui.label("The card is outside this view");
+    }));
+    accept_accessibility_update(&mut tree, &full)?;
+    assert!(ctx.memory(|memory| memory.focused()).is_none());
+    assert_eq!(editor.text(), "Original 😀");
+    Ok(())
+}
+
+#[test]
+fn armed_activation_should_leave_blocked_foreign_and_competing_input_untouched() -> TestResult {
+    for guard in ["blocked", "unfocused", "foreign", "other-field"] {
+        let session = session()?;
+        let mut editor = TextCardEditor::new(&session, "a")?;
+        let ctx = Context::default();
+        creation_handoff(&ctx, &mut editor)?;
+        if guard == "other-field" {
+            ctx.memory_mut(|memory| memory.request_focus(egui::Id::new("competing-field")));
+        }
+        let before = ctx.memory(|memory| memory.focused());
+        let mut raw = RawInput {
+            focused: guard != "unfocused",
+            viewport_id: if guard == "foreign" {
+                egui::ViewportId::from_hash_of("other")
+            } else {
+                egui::ViewportId::ROOT
+            },
+            events: vec![
+                Event::Text("text".into()),
+                Event::Paste("paste".into()),
+                key(Key::Escape, Modifiers::NONE),
+            ],
+            ..Default::default()
+        };
+        let events = raw.events.clone();
+        editor.prepare_inline_input(&ctx, &mut raw, guard == "blocked");
+        assert_eq!(raw.events, events, "{guard}");
+        assert_eq!(ctx.memory(|memory| memory.focused()), before, "{guard}");
+        assert_eq!(editor.text(), "Original 😀");
+    }
+    Ok(())
+}
+
+#[test]
+fn legacy_immediate_mount_should_register_real_accesskit_input_with_first_text() -> TestResult {
+    let session = session()?;
+    let mut editor = TextCardEditor::pending_insertion(&session, pending_node(&session)?)?;
+    let ctx = Context::default();
+    ctx.enable_accesskit();
+    let (output, full) = frame_with_platform(
+        &ctx,
+        &mut editor,
+        vec![Event::Text("Immediate 日本語".into())],
+        0.,
+        true,
+        1.,
+        true,
+    );
+    accept_accessibility_update(&mut None, &full)?;
+    assert!(output.changed && output.input.keyboard_captured);
+    assert_eq!(editor.text(), "Immediate 日本語");
+    Ok(())
+}
+
+#[test]
+fn legacy_unarmed_mount_should_not_claim_first_frame_ime() -> TestResult {
+    let session = session()?;
+    let mut editor = TextCardEditor::new(&session, "a")?;
+    let ctx = Context::default();
+    ctx.enable_accesskit();
+    let (output, full) = frame_with_platform(
+        &ctx,
+        &mut editor,
+        vec![Event::Ime(egui::ImeEvent::Preedit {
+            text: "にほん".into(),
+            active_range_chars: Some(0..3),
+        })],
+        0.,
+        true,
+        1.,
+        true,
+    );
+    accept_accessibility_update(&mut None, &full)?;
+    assert!(!output.changed && !output.input.keyboard_captured && !output.composing);
+    assert_eq!(editor.text(), "Original 😀");
+    assert!(ctx.memory(|memory| memory.focused()).is_none());
+    Ok(())
+}
+
+#[test]
+fn deferred_first_mount_should_respect_a_new_outside_pointer_action() -> TestResult {
+    let session = session()?;
+    let mut editor = TextCardEditor::new(&session, "a")?;
+    let ctx = Context::default();
+    ctx.enable_accesskit();
+    let mut tree = None;
+    for output in creation_handoff_frames(&ctx, &mut editor, false)? {
+        accept_accessibility_update(&mut tree, &output)?;
+    }
+    let position = Pos2::new(600., 350.);
+    let (output, full) = frame_with_platform(
+        &ctx,
+        &mut editor,
+        vec![
+            Event::PointerMoved(position),
+            Event::PointerButton {
+                pos: position,
+                button: egui::PointerButton::Primary,
+                pressed: true,
+                modifiers: Modifiers::NONE,
+            },
+        ],
+        0.,
+        true,
+        1.,
+        true,
+    );
+    accept_accessibility_update(&mut tree, &full)?;
+    assert!(output.done_requested);
+    assert!(!output.cancelled && !output.input.keyboard_captured);
+    assert!(ctx.memory(|memory| memory.focused()).is_none());
+    assert_eq!(editor.text(), "Original 😀");
     Ok(())
 }

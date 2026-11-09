@@ -12,3 +12,6 @@ workspace = true
 [dependencies]
 egui.workspace = true
 craft-canvas-model.workspace = true
+
+[dev-dependencies]
+accesskit_consumer = "=0.38.0"

@@ -23,8 +23,13 @@ pub struct TextCardEditor {
     submitted: Option<String>,
     insertion: Option<Arc<NodeRecord>>,
     inline_viewport: Option<egui::ViewportId>,
+    inline_activation: Option<InlineActivation>,
     inline_cancel_requested: bool,
     initial_arrow_navigation: bool,
+}
+#[derive(Clone, Copy)]
+struct InlineActivation {
+    from_focus: Option<Id>,
 }
 /// One explicit native source-editor outcome; Cancel never emits a mutation.
 #[derive(Default)]
@@ -93,6 +98,7 @@ impl TextCardEditor {
             submitted: None,
             insertion,
             inline_viewport: None,
+            inline_activation: None,
             inline_cancel_requested: false,
             initial_arrow_navigation: false,
         })
@@ -186,9 +192,10 @@ impl TextCardEditor {
         self.submitted = None;
         Ok(())
     }
-    /// Acquire inline focus in the actual creation/activation frame, before later input.
-    /// Call during the owning viewport's UI pass, not repeatedly during painting.
-    /// Repeated activation of an already focused editor does not interrupt native IME.
+    /// Arm inline activation during the owning viewport's create/open UI pass.
+    /// Focus is granted by the next unblocked pre-input hook, never after painting
+    /// an absent widget into an otherwise complete accessibility tree. Call once
+    /// per explicit activation, not repeatedly during painting.
     ///
     /// # Errors
     /// Refuses to move this retained input into a different viewport.
@@ -200,16 +207,22 @@ impl TextCardEditor {
             ));
         }
         self.inline_viewport = Some(viewport);
-        ctx.memory_mut(|memory| {
-            if !memory.has_focus(self.id) {
-                memory.request_focus(self.id);
-            }
-        });
+        let focused = ctx.memory(|memory| memory.focused());
+        if focused != Some(self.id) {
+            self.inline_activation = Some(InlineActivation {
+                from_focus: focused,
+            });
+            self.focus = true;
+            ctx.request_repaint();
+        }
         Ok(())
     }
     /// Route only this active inline editor's Escape before egui focus navigation.
     /// Call from the host's `eframe::App::raw_input_hook` (or before `Context::run`).
-    /// `blocked` includes any modal, disabled editor or host input handoff.
+    /// `blocked` includes any modal, inactive/disabled editor, culled card or host
+    /// input handoff. The host must reveal and mount the active input in this pass.
+    /// An armed activation only transfers its captured prior focus; competing
+    /// focus is never overridden. It does not manufacture accessibility nodes.
     /// Pending commands survive repeated hooks before UI mounting (eframe may defer
     /// painting), but expire on blocked/foreign input or a disabled/unfocused mount.
     /// Text, paste and IME events are neither removed nor re-injected. Unknown focus
@@ -221,11 +234,20 @@ impl TextCardEditor {
         blocked: bool,
     ) {
         self.initial_arrow_navigation = false;
-        if blocked
-            || !input.focused
-            || self.inline_viewport != Some(input.viewport_id)
-            || !ctx.memory(|memory| memory.has_focus(self.id))
-        {
+        if blocked || !input.focused || self.inline_viewport != Some(input.viewport_id) {
+            self.inline_cancel_requested = false;
+            return;
+        }
+        if let Some(activation) = self.inline_activation.take() {
+            ctx.memory_mut(|memory| {
+                if memory.focused() == activation.from_focus && !memory.has_focus(self.id) {
+                    // Before begin_pass, an unmounted widget is subject to egui's
+                    // ordinary focus cleanup before its accessibility update.
+                    memory.request_focus(self.id);
+                }
+            });
+        }
+        if !ctx.memory(|memory| memory.has_focus(self.id)) {
             self.inline_cancel_requested = false;
             return;
         }
@@ -276,7 +298,9 @@ impl TextCardEditor {
             return InlineTextOutput::default();
         }
         let enabled = ui.is_enabled();
-        let initial_focus = enabled && std::mem::take(&mut self.focus);
+        let initial_focus =
+            enabled && self.inline_activation.is_none() && std::mem::take(&mut self.focus);
+        let immediate_focus = initial_focus && self.inline_viewport.is_none();
         let zoom = if zoom.is_finite() && zoom > 0.0 {
             zoom
         } else {
@@ -304,9 +328,10 @@ impl TextCardEditor {
         }
         let composing =
             self.composing || (ime_frame && ui.memory(|memory| memory.has_focus(self.id)));
-        if initial_focus && self.inline_viewport.is_none() && !composing && !ime_frame {
-            // Compatibility for hosts mounting immediately in the activation frame.
-            // Delayed first-frame input requires begin_inline at the actual creation intent.
+        if immediate_focus && !composing && !ime_frame && ui.input(|input| input.focused) {
+            // Legacy immediate mounting acquires focus only where the actual
+            // widget is about to participate in this pass's accessibility tree.
+            // First-frame IME requires begin_inline plus prepare_inline_input.
             self.inline_viewport = Some(ui.ctx().viewport_id());
             ui.memory_mut(|memory| {
                 if !memory.has_focus(self.id) {
@@ -360,7 +385,7 @@ impl TextCardEditor {
                 )
             })
             .inner;
-        if initial_focus
+        if immediate_focus
             && !cancel_key
             && !composing
             && ui.input(|input| input.focused && input.pointer.primary_pressed())
@@ -374,7 +399,7 @@ impl TextCardEditor {
             ui.memory_mut(|memory| memory.move_focus(egui::FocusDirection::None));
         }
         let deliberate_blur = interactive
-            && !initial_focus
+            && !immediate_focus
             && !composing
             && response.lost_focus()
             && ui.input(|input| input.focused && input.pointer.primary_pressed());
