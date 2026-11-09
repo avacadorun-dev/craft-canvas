@@ -4,5 +4,5 @@ mod view;
 pub use text_editor::{InlineTextOutput, TextCardEditor, TextEditorOutput};
 pub use view::{
     CanvasIntent, CanvasView, CanvasViewConfig, CanvasViewHost, CanvasViewLabels, CanvasViewOutput,
-    CanvasViewStyle, NodeBodyResponse, PlainTextBody, VisibleNodeGeometry,
+    CanvasViewStyle, NodeBodyResponse, PlainTextBody, VisibleEdgeGeometry, VisibleNodeGeometry,
 };

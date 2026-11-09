@@ -6,6 +6,7 @@ mod document;
 mod geometry;
 mod json_guard;
 mod session;
+mod smooth_step;
 
 pub use commands::{
     CanvasCommand, CanvasTransaction, FieldUpdate, IdMapping, Selection, SelectionMap, WorkControl,
@@ -17,6 +18,7 @@ pub use connectors::{
 pub use document::{CanvasDocument, CanvasLimits, EdgeRecord, NodeKind, NodeRecord, Side};
 pub use geometry::{Camera, WorldPoint, WorldRect};
 pub use session::{CanvasSession, ContentIdentity, HistoryUsage, PreparedChange};
+pub use smooth_step::SmoothStepConnector;
 
 /// A recoverable validation or exact-base failure. No failure changes the session.
 #[derive(Debug, thiserror::Error)]

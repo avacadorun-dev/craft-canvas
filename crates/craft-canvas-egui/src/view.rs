@@ -1,8 +1,8 @@
 //! A relative-origin native viewport emits guarded intents instead of saving another model.
 use craft_canvas_model::{
     Camera, CanvasCommand, CanvasDialect, CanvasError, CanvasSession, CanvasTransaction,
-    ContentIdentity, GroupBehavior, NodeKind, NodeRecord, Selection, WorkControl, WorldPoint,
-    WorldRect,
+    ConnectorEnd, ContentIdentity, GroupBehavior, NodeKind, NodeRecord, Selection, Side,
+    SmoothStepConnector, WorkControl, WorldPoint, WorldRect, distance_to_segment,
 };
 use egui::{
     Align2, Color32, FontId, Id, Key, PointerButton, Pos2, Rect, Sense, Stroke, StrokeKind, Ui,
@@ -192,6 +192,20 @@ pub struct VisibleNodeGeometry {
     /// Child-body clip rectangle, intersected with the actual viewport.
     pub body_clip: Rect,
 }
+/// One actually painted connector; hit testing uses these same screen-space segments.
+#[derive(Clone, Debug)]
+pub struct VisibleEdgeGeometry {
+    /// Stable canonical edge identity.
+    pub edge_id: String,
+    /// Bounded rounded route, after relative-origin world-to-screen conversion.
+    pub points: Vec<Pos2>,
+    /// Source-compatible location for a host-owned label or contextual editor trigger.
+    pub label_anchor: Pos2,
+    /// Closed source arrow triangle when the canonical marker requests it.
+    pub source_arrow: Option<[Pos2; 3]>,
+    /// Closed target arrow triangle, including the standard omitted-marker default.
+    pub target_arrow: Option<[Pos2; 3]>,
+}
 /// A native frame's typed intents and observed geometry. This is not a persistence receipt.
 pub struct CanvasViewOutput {
     /// Viewport focus/pointer response.
@@ -204,6 +218,8 @@ pub struct CanvasViewOutput {
     pub viewport: Rect,
     /// Actual current-frame visible card allocations.
     pub nodes: Vec<VisibleNodeGeometry>,
+    /// Actual visible connector paths and label positions, shared with pointer hit testing.
+    pub edges: Vec<VisibleEdgeGeometry>,
 }
 struct MoveGesture {
     base: ContentIdentity,
@@ -323,6 +339,7 @@ impl CanvasView {
         self.last_size = Some(dimensions);
         let focused = ui.input(|input| input.focused);
         if !focused
+            || !ui.is_enabled()
             || !config.interactive
             || config.shortcuts_blocked
             || ui.input(|input| input.key_pressed(Key::Escape))
@@ -332,39 +349,8 @@ impl CanvasView {
         ui.painter()
             .rect_filled(viewport, 0.0, config.style.background);
         self.paint_grid(ui, viewport, config.style.grid);
+        let painted_edges = self.paint_edges(ui, viewport, session, config, &mut errors);
         let painter = ui.painter().with_clip_rect(viewport);
-        for edge in session.document().edges() {
-            if let (Some(from), Some(to)) = (
-                session.document().node(edge.from_node()),
-                session.document().node(edge.to_node()),
-            ) {
-                let a = edge.from_side().map_or_else(
-                    || from.bounds().center(),
-                    |side| side.point(self.preview_bounds(from)),
-                );
-                let b = edge.to_side().map_or_else(
-                    || to.bounds().center(),
-                    |side| side.point(self.preview_bounds(to)),
-                );
-                let a = screen(self.camera, a, viewport);
-                let b = screen(self.camera, b, viewport);
-                painter.line_segment(
-                    [a, b],
-                    Stroke::new(
-                        if self.selection.edges.contains(edge.id()) {
-                            2.0
-                        } else {
-                            1.0
-                        },
-                        if self.selection.edges.contains(edge.id()) {
-                            config.style.selection
-                        } else {
-                            config.style.border
-                        },
-                    ),
-                );
-            }
-        }
         let mut observed = vec![];
         let mut pointer_captured = false;
         let mut keyboard_captured = false;
@@ -486,7 +472,12 @@ impl CanvasView {
         if pointer_captured || keyboard_captured {
             self.gesture = None;
         }
-        if config.interactive && focused && !config.shortcuts_blocked && !pointer_captured {
+        if ui.is_enabled()
+            && config.interactive
+            && focused
+            && !config.shortcuts_blocked
+            && !pointer_captured
+        {
             let pointer = ui.input(|input| input.pointer.interact_pos());
             let delta = ui.input(|input| input.pointer.delta());
             let inside =
@@ -581,6 +572,18 @@ impl CanvasView {
                             Err(error) => errors.push(error),
                         }
                     }
+                } else if let Some(edge) = hit_edge(&painted_edges, pointer) {
+                    if additive {
+                        if !self.selection.edges.insert(edge.edge_id.clone()) {
+                            self.selection.edges.remove(&edge.edge_id);
+                        }
+                    } else {
+                        self.selection = Selection {
+                            nodes: BTreeSet::new(),
+                            edges: BTreeSet::from([edge.edge_id.clone()]),
+                        };
+                    }
+                    self.gesture = None;
                 } else {
                     let original = if additive {
                         self.selection.clone()
@@ -698,7 +701,9 @@ impl CanvasView {
                     point(pointer.x - viewport.left(), pointer.y - viewport.top()),
                     size,
                 );
-                if session.document().hit_node(world).is_none() {
+                if session.document().hit_node(world).is_none()
+                    && hit_edge(&painted_edges, pointer).is_none()
+                {
                     intents.push(CanvasIntent::CreateText {
                         base: session.identity(),
                         position: world,
@@ -715,6 +720,7 @@ impl CanvasView {
             errors,
             viewport,
             nodes: observed,
+            edges: painted_edges,
         }
     }
     fn keyboard(
@@ -795,7 +801,7 @@ impl CanvasView {
             });
         }
         if ui.input(|input| input.key_pressed(Key::Delete) || input.key_pressed(Key::Backspace))
-            && !self.selection.nodes.is_empty()
+            && (!self.selection.nodes.is_empty() || !self.selection.edges.is_empty())
         {
             intents.push(CanvasIntent::Transaction(CanvasTransaction::new(
                 base,
@@ -831,6 +837,105 @@ impl CanvasView {
             _ => node.bounds(),
         }
     }
+    fn paint_edges(
+        &self,
+        ui: &Ui,
+        viewport: Rect,
+        session: &CanvasSession,
+        config: &CanvasViewConfig,
+        errors: &mut Vec<CanvasError>,
+    ) -> Vec<VisibleEdgeGeometry> {
+        let clip = viewport.intersect(ui.clip_rect());
+        if !clip.is_positive() {
+            return Vec::new();
+        }
+        let painter = ui.painter().with_clip_rect(clip);
+        let world_view = world_rect(self.camera, viewport.expand(12.0));
+        let mut observed = Vec::new();
+        let mut work = WorkControl::new(session.limits().max_work_units, None);
+        for edge in session.document().edges() {
+            let derived = (|| -> craft_canvas_model::Result<Option<VisibleEdgeGeometry>> {
+                work.charge(1)?;
+                let from = session
+                    .document()
+                    .node(edge.from_node())
+                    .ok_or_else(|| CanvasError::NotFound(edge.from_node().into()))?;
+                let to = session
+                    .document()
+                    .node(edge.to_node())
+                    .ok_or_else(|| CanvasError::NotFound(edge.to_node().into()))?;
+                // Loose source handles choose the first (Top) handle when a legacy side
+                // is omitted. This fallback is presentation only, never a JSON rewrite.
+                let from_side = edge.from_side().unwrap_or(Side::Top);
+                let to_side = edge.to_side().unwrap_or(Side::Top);
+                let route = if edge.from_node() == edge.to_node() {
+                    SmoothStepConnector::loop_around(self.preview_bounds(from), from_side, to_side)?
+                } else {
+                    SmoothStepConnector::between(
+                        from_side.point(self.preview_bounds(from)),
+                        from_side,
+                        to_side.point(self.preview_bounds(to)),
+                        to_side,
+                    )?
+                };
+                if !world_view.intersects(route.bounds()) {
+                    return Ok(None);
+                }
+                let points: Vec<_> = route
+                    .flatten(0.35 / self.camera.zoom(), 64, &mut work)?
+                    .into_iter()
+                    .map(|point| screen(self.camera, point, viewport))
+                    .collect();
+                let marker_size = (8.0 * self.camera.zoom()) as f32;
+                let source_arrow = (edge.from_end() == ConnectorEnd::Arrow)
+                    .then(|| arrow(&points, false, marker_size))
+                    .flatten();
+                let target_arrow = (edge.to_end() == ConnectorEnd::Arrow)
+                    .then(|| arrow(&points, true, marker_size))
+                    .flatten();
+                Ok(Some(VisibleEdgeGeometry {
+                    edge_id: edge.id().into(),
+                    points,
+                    label_anchor: screen(self.camera, route.label_anchor(), viewport),
+                    source_arrow,
+                    target_arrow,
+                }))
+            })();
+            match derived {
+                Ok(Some(geometry)) => {
+                    let selected = self.selection.edges.contains(edge.id());
+                    let color = if selected {
+                        config.style.selection
+                    } else {
+                        config.style.border
+                    };
+                    let stroke = Stroke::new(
+                        (if selected { 3.0 } else { 2.0 }) * self.camera.zoom() as f32,
+                        color,
+                    );
+                    painter.add(egui::Shape::line(geometry.points.clone(), stroke));
+                    for triangle in [geometry.source_arrow, geometry.target_arrow]
+                        .into_iter()
+                        .flatten()
+                    {
+                        painter.add(egui::Shape::convex_polygon(
+                            triangle.to_vec(),
+                            color,
+                            Stroke::NONE,
+                        ));
+                    }
+                    observed.push(geometry);
+                }
+                Ok(None) => {}
+                Err(error) => {
+                    // A bounded frame reports one actionable failure, not one per remaining edge.
+                    errors.push(error);
+                    break;
+                }
+            }
+        }
+        observed
+    }
     fn paint_grid(&self, ui: &Ui, viewport: Rect, color: Color32) {
         let spacing = (24.0 * self.camera.zoom()).max(12.0);
         let x0 = f64::from(viewport.left())
@@ -855,6 +960,46 @@ impl CanvasView {
             }
         }
     }
+}
+fn hit_edge(edges: &[VisibleEdgeGeometry], pointer: Pos2) -> Option<&VisibleEdgeGeometry> {
+    // Nodes are tested first by the caller; among edges, the last painted line wins.
+    edges.iter().rev().find(|edge| {
+        edge.points.windows(2).any(|segment| {
+            distance_to_segment(
+                point(pointer.x, pointer.y),
+                point(segment[0].x, segment[0].y),
+                point(segment[1].x, segment[1].y),
+            ) <= 6.0
+        }) || [edge.source_arrow, edge.target_arrow]
+            .into_iter()
+            .flatten()
+            .any(|triangle| {
+                let cross = |a: Pos2, b: Pos2| {
+                    let line = b - a;
+                    let offset = pointer - a;
+                    line.x * offset.y - line.y * offset.x
+                };
+                let sides = [
+                    cross(triangle[0], triangle[1]),
+                    cross(triangle[1], triangle[2]),
+                    cross(triangle[2], triangle[0]),
+                ];
+                sides.iter().all(|side| *side >= 0.0) || sides.iter().all(|side| *side <= 0.0)
+            })
+    })
+}
+fn arrow(points: &[Pos2], at_end: bool, size: f32) -> Option<[Pos2; 3]> {
+    let (tip, neighbor) = if at_end {
+        let tip = *points.last()?;
+        (tip, *points.iter().rev().find(|point| **point != tip)?)
+    } else {
+        let tip = *points.first()?;
+        (tip, *points.iter().find(|point| **point != tip)?)
+    };
+    let direction = (neighbor - tip).normalized();
+    let center = tip + direction * size;
+    let perpendicular = Vec2::new(-direction.y, direction.x) * size * 0.5;
+    Some([tip, center + perpendicular, center - perpendicular])
 }
 fn point(x: f32, y: f32) -> WorldPoint {
     WorldPoint {
