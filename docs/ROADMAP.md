@@ -13,8 +13,8 @@ A separate WriterCraft agent is authorized to complete a coherent non-Canvas alp
 
 | Step | Issue | Result | State |
 |---|---|---|---|
-| CC-01 | [#1](https://github.com/avacadorun-dev/craft-canvas/issues/1) | Full source contract, native equivalents and independent omission review | Active preparation |
-| CC-02 | [#2](https://github.com/avacadorun-dev/craft-canvas/issues/2) | Named/dynamic ports, validation and compatible legacy codec | Queued |
+| CC-01 | [#1](https://github.com/avacadorun-dev/craft-canvas/issues/1) | Full source contract, native equivalents and independent omission review | Complete — [9da1c24](https://github.com/avacadorun-dev/craft-canvas/commit/9da1c24f08efd2742239996401da3f590506d7f0) |
+| CC-02 | [#2](https://github.com/avacadorun-dev/craft-canvas/issues/2) | Named/dynamic ports, validation and compatible legacy codec | Active |
 | CC-03 | [#3](https://github.com/avacadorun-dev/craft-canvas/issues/3) | Direct owned creation/reconnection with cancellation | Queued |
 | CC-04 | [#4](https://github.com/avacadorun-dev/craft-canvas/issues/4) | Selection, movement, resizing, rotation, groups and host drop insertion | Queued |
 | CC-05 | [#5](https://github.com/avacadorun-dev/craft-canvas/issues/5) | Custom node/edge/handle/label native composition | Queued |

@@ -83,6 +83,68 @@ fn wrong_expected_endpoint_refuses_without_mutation() -> TestResult {
     assert_eq!(session.document().raw_json(), RAW);
     Ok(())
 }
+
+struct RefuseNodeConnections(&'static str);
+impl CanvasDialect for RefuseNodeConnections {
+    fn node_policy(&self, node: &NodeRecord) -> NodePolicy {
+        StandardDialect.node_policy(node)
+    }
+    fn can_connect(&self, node: &NodeRecord) -> bool {
+        node.id() != self.0
+    }
+}
+
+#[test]
+fn field_endpoint_edit_cannot_bypass_final_connection_policy() -> TestResult {
+    let session = session()?;
+    let request = CanvasTransaction::new(
+        session.identity(),
+        vec![CanvasCommand::SetEdgeFields {
+            edge_id: "e".into(),
+            fields: vec![FieldUpdate::set(
+                vec!["toNode".into()],
+                r#""c""#,
+                session.limits(),
+            )?],
+        }],
+    );
+    assert!(matches!(
+        session.prepare(request, &RefuseNodeConnections("c")),
+        Err(CanvasError::NotEditable(id)) if id == "c"
+    ));
+    assert_eq!(session.document().raw_json(), RAW);
+    assert_eq!(session.history_usage().undo_steps, 0);
+    Ok(())
+}
+
+#[test]
+fn unrelated_field_edit_preserves_an_existing_nonconnectable_edge() -> TestResult {
+    let mut session = session()?;
+    let request = CanvasTransaction::new(
+        session.identity(),
+        vec![CanvasCommand::SetEdgeFields {
+            edge_id: "e".into(),
+            fields: vec![FieldUpdate::set(
+                vec!["toEnd".into()],
+                r#""none""#,
+                session.limits(),
+            )?],
+        }],
+    );
+    let prepared = session.prepare(request, &RefuseNodeConnections("b"))?;
+    session.apply(prepared)?;
+    let edge = session.document().edge("e").ok_or("edge")?;
+    assert_eq!(edge.to_node(), "b");
+    assert_eq!(edge.to_end(), ConnectorEnd::None);
+    assert_eq!(
+        edge.field("future").ok_or("future")?.get(),
+        r#"{"n":1.23000}"#
+    );
+    session.apply(session.prepare_undo()?)?;
+    assert_eq!(session.document().raw_json(), RAW);
+    Ok(())
+}
+
 #[test]
 fn bezier_controls_match_source_and_flatten_is_bounded() -> TestResult {
     let curve = CubicConnector::between(

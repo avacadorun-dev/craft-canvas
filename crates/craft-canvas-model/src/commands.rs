@@ -384,7 +384,17 @@ pub(crate) fn execute(
                 if fields_equal(&next, edge.fields()) {
                     continue;
                 }
-                edges[at] = Arc::new(edge.with_fields(next, limits)?);
+                let next = edge.with_fields(next, limits)?;
+                if next.from_node() != edge.from_node()
+                    || next.to_node() != edge.to_node()
+                    || next.from_side() != edge.from_side()
+                    || next.to_side() != edge.to_side()
+                {
+                    // Generic field updates share the same final candidate policy as
+                    // explicit reconnection; label/marker edits are not reconnects.
+                    reconnects.insert(next.id().into());
+                }
+                edges[at] = Arc::new(next);
             }
             CanvasCommand::ReconnectEdge {
                 edge_id,

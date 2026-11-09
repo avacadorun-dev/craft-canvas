@@ -61,6 +61,6 @@ The first native product target remains macOS ARM64 to match the real consumer. 
 
 ## Current checkpoint and immediate next action
 
-CC-01 is active. Reference research ruled out unchanged adoption of the inspected Rust alternatives; the chosen direction is a maintained native implementation on the existing CraftCanvas authority, with selective attributed reuse. No new Rust code or dependency change was made during this priority switch. The previously proposed four-side-only gesture API is paused because it would not represent multiple named handles on one side.
+CC-01 completed at9da1c24 with independent preparation review and hosted qualification42626580148. CC-02 is active. Reference research ruled out unchanged adoption of the inspected Rust alternatives; the chosen direction is a maintained native implementation on the existing CraftCanvas authority, with selective attributed reuse. No new Rust code or dependency change was made during this priority switch. The previously proposed four-side-only gesture API is paused because it would not represent multiple named handles on one side.
 
 Finish independent omission/architecture review, then specify CC-02's extension codec and port/event contracts before touching commands. Reuse the exact current foundation; do not restart the implementation. Keep engine production and WriterCraft full Canvas acceptance explicitly pending throughout.

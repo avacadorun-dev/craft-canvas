@@ -2,7 +2,7 @@
 
 Follow docs/ROADMAP.md and its actual GitHub issues. Keep one library issue active; each item is complete only after its stated evidence and independent review.
 
-- [ ] CC-01: Freeze independently reviewed inventory, architecture, roadmap, standalone documentation and app handoff.
+- [x] CC-01: Freeze independently reviewed inventory, architecture, roadmap, standalone documentation and app handoff.
 - [ ] CC-02: Compatible named ports and connection validation.
 - [ ] CC-03: Owned direct connection/reconnection gestures.
 - [ ] CC-04: Selection, transforms and groups.
