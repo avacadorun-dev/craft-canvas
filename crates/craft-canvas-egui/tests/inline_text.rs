@@ -30,29 +30,77 @@ fn frame(
     focused: bool,
     zoom: f64,
 ) -> InlineTextOutput {
+    frame_with_platform(ctx, editor, events, time, focused, zoom, true).0
+}
+
+fn frame_with_platform(
+    ctx: &Context,
+    editor: &mut TextCardEditor,
+    events: Vec<Event>,
+    time: f64,
+    focused: bool,
+    zoom: f64,
+    enabled: bool,
+) -> (InlineTextOutput, egui::FullOutput) {
     let mut output = InlineTextOutput::default();
-    let mut full = ctx.run_ui(
-        RawInput {
-            events,
-            time: Some(time),
-            focused,
-            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(700., 500.))),
-            ..Default::default()
-        },
-        |root| {
-            egui::CentralPanel::default().show(root, |ui| {
-                let rect = Rect::from_min_size(Pos2::new(40., 40.), Vec2::new(300., 180.));
+    let mut raw = RawInput {
+        events,
+        time: Some(time),
+        focused,
+        screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(700., 500.))),
+        ..Default::default()
+    };
+    editor.prepare_inline_input(ctx, &mut raw, !enabled);
+    let full = ctx.run_ui(raw, |root| {
+        egui::CentralPanel::default().show(root, |ui| {
+            let rect = Rect::from_min_size(Pos2::new(40., 40.), Vec2::new(300., 180.));
+            ui.add_enabled_ui(enabled, |ui| {
                 ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
                     ui.set_clip_rect(rect);
                     output = editor.show_inline(ui, rect, zoom);
                 });
             });
-        },
-    );
-    full.textures_delta.clear();
-    full.platform_output.commands.clear();
-    output
+        });
+    });
+    (output, full)
 }
+
+/// A real prior input and creation command; the new card has not been painted yet.
+fn creation_handoff(ctx: &Context, editor: &mut TextCardEditor) -> TestResult {
+    let mut previous_text = String::from("Previous input");
+    let previous_id = egui::Id::new("previous-input");
+    let mut activation = None;
+    for (time, create) in [(-2., false), (-1., true)] {
+        let full = ctx.run_ui(
+            RawInput {
+                events: if create {
+                    vec![key(Key::N, Modifiers::COMMAND)]
+                } else {
+                    vec![]
+                },
+                time: Some(time),
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(700., 500.))),
+                ..Default::default()
+            },
+            |root| {
+                egui::CentralPanel::default().show(root, |ui| {
+                    if !create {
+                        ui.memory_mut(|memory| memory.request_focus(previous_id));
+                    }
+                    ui.add(egui::TextEdit::singleline(&mut previous_text).id(previous_id));
+                    if ui.input_mut(|input| input.consume_key(Modifiers::COMMAND, Key::N)) {
+                        activation = Some(editor.begin_inline(ui.ctx()));
+                    }
+                });
+            },
+        );
+        // A real prior text input enabled native IME before the creation handoff.
+        assert!(full.platform_output.ime.is_some());
+    }
+    activation.ok_or("creation command was not handled")??;
+    Ok(())
+}
+
 #[test]
 fn inline_widget_should_receive_native_selection_paste_and_local_undo_without_a_canonical_write()
 -> TestResult {
@@ -424,7 +472,8 @@ fn pending_surface_should_use_the_real_card_host_without_mutating_canonical_or_e
     };
     let mut view = craft_canvas_egui::CanvasView::default();
     let ctx = Context::default();
-    // No bootstrap paint: CreateText can mount its native input one frame after the intent.
+    creation_handoff(&ctx, &mut host.editor)?;
+    // No bootstrap card paint: CreateText mounts native input after its creation intent.
     // Withholding acknowledgement also exercises a retained draft during a save failure.
     for (index, events) in [
         vec![Event::Text("Next frame".into())],
@@ -434,36 +483,33 @@ fn pending_surface_should_use_the_real_card_host_without_mutating_canonical_or_e
     .into_iter()
     .enumerate()
     {
-        let mut full = ctx.run_ui(
-            RawInput {
-                events,
-                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(700., 500.))),
-                time: Some(index as f64),
-                ..Default::default()
-            },
-            |root| {
-                egui::CentralPanel::default().show(root, |ui| {
-                    let mut config = craft_canvas_egui::CanvasViewConfig::new(
-                        egui::Id::new("pending-board"),
-                        ui,
-                    );
-                    config.interactive = false;
-                    config.shortcuts_blocked = true;
-                    let output = view.show(ui, &session, &StandardDialect, &mut host, &config);
-                    assert!(output.intents.is_empty());
-                    assert!(output.errors.is_empty());
-                    assert_eq!(
-                        output
-                            .nodes
-                            .iter()
-                            .filter(|node| node.node_id == "pending")
-                            .count(),
-                        1
-                    );
-                });
-            },
-        );
-        full.textures_delta.clear();
+        let mut raw = RawInput {
+            events,
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(700., 500.))),
+            time: Some(index as f64),
+            ..Default::default()
+        };
+        host.editor.prepare_inline_input(&ctx, &mut raw, false);
+        let full = ctx.run_ui(raw, |root| {
+            egui::CentralPanel::default().show(root, |ui| {
+                let mut config =
+                    craft_canvas_egui::CanvasViewConfig::new(egui::Id::new("pending-board"), ui);
+                config.interactive = false;
+                config.shortcuts_blocked = true;
+                let output = view.show(ui, &session, &StandardDialect, &mut host, &config);
+                assert!(output.intents.is_empty());
+                assert!(output.errors.is_empty());
+                assert_eq!(
+                    output
+                        .nodes
+                        .iter()
+                        .filter(|node| node.node_id == "pending")
+                        .count(),
+                    1
+                );
+            });
+        });
+        assert!(full.platform_output.ime.is_some());
         assert!(host.output.input.keyboard_captured);
         assert!(!host.output.done_requested);
         assert_eq!(host.output.cancelled, index == 2);
@@ -524,11 +570,13 @@ fn creating_pointer_should_keep_initial_card_focus_without_requesting_done() -> 
 }
 
 #[test]
-fn first_mounted_ime_selection_should_survive_exact_insertion_acknowledgement() -> TestResult {
+fn first_mounted_ime_should_survive_native_focus_handoff_and_insertion_acknowledgement()
+-> TestResult {
     let mut session = session()?;
     let mut editor = TextCardEditor::pending_insertion(&session, pending_node(&session)?)?;
     let ctx = Context::default();
-    let output = frame(
+    creation_handoff(&ctx, &mut editor)?;
+    let (output, full) = frame_with_platform(
         &ctx,
         &mut editor,
         vec![
@@ -544,24 +592,46 @@ fn first_mounted_ime_selection_should_survive_exact_insertion_acknowledgement() 
         0.,
         true,
         1.,
+        true,
     );
     assert!(output.composing && output.input.keyboard_captured);
     assert!(!output.done_requested && !output.cancelled);
+    assert!(
+        !full
+            .platform_output
+            .ime
+            .ok_or("native IME output")?
+            .should_interrupt_composition
+    );
     assert_eq!(editor.text(), "にほん");
     session.apply(insert_pending(&session, pending_node(&session)?)?)?;
     editor.acknowledge_insertion(&session)?;
-    let output = frame(&ctx, &mut editor, vec![], 1., true, 1.);
+    let (output, full) = frame_with_platform(&ctx, &mut editor, vec![], 1., true, 1., true);
     assert!(output.composing && output.input.keyboard_captured);
+    assert!(
+        !full
+            .platform_output
+            .ime
+            .ok_or("retained native IME output")?
+            .should_interrupt_composition
+    );
     assert_eq!(editor.text(), "にほん");
-    frame(
+    let (_, full) = frame_with_platform(
         &ctx,
         &mut editor,
         vec![Event::Ime(egui::ImeEvent::Commit("日本語".into()))],
         2.,
         true,
         1.,
+        true,
     );
-    // Commit replaces the same retained preedit range instead of appending or losing text.
+    assert!(
+        !full
+            .platform_output
+            .ime
+            .ok_or("committed native IME output")?
+            .should_interrupt_composition
+    );
     assert_eq!(editor.text(), "日本語");
     let output = frame(
         &ctx,
@@ -572,6 +642,16 @@ fn first_mounted_ime_selection_should_survive_exact_insertion_acknowledgement() 
         1.,
     );
     assert!(output.done_requested && !output.composing);
+    let output = frame(
+        &ctx,
+        &mut editor,
+        vec![key(Key::Escape, Modifiers::NONE)],
+        4.,
+        true,
+        1.,
+    );
+    assert!(output.cancelled && !output.done_requested);
+    assert!(!frame(&ctx, &mut editor, vec![], 5., true, 1.).cancelled);
     assert_eq!(
         session.document().node("pending").ok_or("pending")?.body(),
         ""
@@ -625,5 +705,334 @@ fn pending_draft_preservation_should_prepare_original_insert_and_latest_edit_ato
     assert_eq!(session.document().raw_json(), before);
     assert!(editor.awaits_insertion() && editor.dirty());
     assert!(editor.submit().is_err());
+    Ok(())
+}
+
+#[test]
+fn owned_escape_should_cancel_once_without_losing_the_pending_draft() -> TestResult {
+    let session = session()?;
+    let mut editor = TextCardEditor::pending_insertion(&session, pending_node(&session)?)?;
+    let ctx = Context::default();
+    creation_handoff(&ctx, &mut editor)?;
+    let output = frame(
+        &ctx,
+        &mut editor,
+        vec![key(Key::Escape, Modifiers::NONE)],
+        0.,
+        true,
+        1.,
+    );
+    assert!(output.cancelled && !output.done_requested);
+    assert!(editor.awaits_insertion());
+    let output = frame(&ctx, &mut editor, vec![], 1., true, 1.);
+    assert!(!output.cancelled);
+    let repeated = Event::Key {
+        key: Key::Escape,
+        physical_key: None,
+        pressed: true,
+        repeat: true,
+        modifiers: Modifiers::NONE,
+    };
+    let output = frame(&ctx, &mut editor, vec![repeated], 2., true, 1.);
+    assert!(!output.cancelled);
+    assert!(editor.awaits_insertion());
+    Ok(())
+}
+
+#[test]
+fn raw_hook_should_leave_unowned_and_blocked_input_unchanged() -> TestResult {
+    for guard in ["modal", "unfocused", "other-viewport", "other-field"] {
+        let session = session()?;
+        let mut editor = TextCardEditor::new(&session, "a")?;
+        let ctx = Context::default();
+        creation_handoff(&ctx, &mut editor)?;
+        if guard == "other-field" {
+            ctx.memory_mut(|memory| memory.request_focus(egui::Id::new("other-field")));
+        }
+        let mut raw = RawInput {
+            focused: guard != "unfocused",
+            viewport_id: if guard == "other-viewport" {
+                egui::ViewportId::from_hash_of("other-viewport")
+            } else {
+                egui::ViewportId::ROOT
+            },
+            events: vec![
+                Event::Text("Text".into()),
+                Event::Paste("Paste".into()),
+                Event::Ime(egui::ImeEvent::Preedit {
+                    text: "にほん".into(),
+                    active_range_chars: Some(0..3),
+                }),
+                key(Key::Escape, Modifiers::NONE),
+            ],
+            ..Default::default()
+        };
+        let expected = raw.events.clone();
+        editor.prepare_inline_input(&ctx, &mut raw, guard == "modal");
+        assert_eq!(raw.events, expected, "{guard}");
+        assert_eq!(editor.text(), "Original 😀");
+    }
+    Ok(())
+}
+
+#[test]
+fn raw_hook_should_remove_only_owned_escape_and_preserve_native_input_order() -> TestResult {
+    let session = session()?;
+    let mut editor = TextCardEditor::new(&session, "a")?;
+    let ctx = Context::default();
+    creation_handoff(&ctx, &mut editor)?;
+    let untouched = vec![
+        Event::Text("Text".into()),
+        Event::Paste("Paste".into()),
+        Event::Ime(egui::ImeEvent::Preedit {
+            text: "にほん".into(),
+            active_range_chars: Some(0..3),
+        }),
+        key(Key::Escape, Modifiers::SHIFT),
+    ];
+    let mut raw = RawInput {
+        events: untouched.clone(),
+        ..Default::default()
+    };
+    raw.events.insert(1, key(Key::Escape, Modifiers::NONE));
+    editor.prepare_inline_input(&ctx, &mut raw, false);
+    assert_eq!(raw.events, untouched);
+    editor.prepare_inline_input(&ctx, &mut raw, false);
+    assert_eq!(raw.events, untouched);
+    let output = frame(&ctx, &mut editor, vec![], 0., true, 1.);
+    assert!(!output.cancelled);
+    Ok(())
+}
+
+#[test]
+fn disabled_retained_editor_should_not_process_text_paste_ime_or_shortcuts() -> TestResult {
+    let session = session()?;
+    let mut editor = TextCardEditor::pending_insertion(&session, pending_node(&session)?)?;
+    let ctx = Context::default();
+    creation_handoff(&ctx, &mut editor)?;
+    frame(
+        &ctx,
+        &mut editor,
+        vec![Event::Text("Retained draft".into())],
+        0.,
+        true,
+        1.,
+    );
+    let (output, full) = frame_with_platform(
+        &ctx,
+        &mut editor,
+        vec![
+            Event::Text(" unwanted".into()),
+            Event::Paste("paste".into()),
+            Event::Ime(egui::ImeEvent::Preedit {
+                text: "にほん".into(),
+                active_range_chars: Some(0..3),
+            }),
+            key(Key::Enter, Modifiers::COMMAND),
+            key(Key::Escape, Modifiers::NONE),
+        ],
+        1.,
+        true,
+        1.,
+        false,
+    );
+    assert_eq!(editor.text(), "Retained draft");
+    assert!(!output.changed && !output.done_requested && !output.cancelled && !output.composing);
+    assert!(
+        !full
+            .platform_output
+            .ime
+            .is_some_and(|ime| ime.should_interrupt_composition)
+    );
+    // egui may release a disabled widget; the retained editor must not reclaim it.
+    assert!(ctx.memory(|memory| memory.focused()).is_none());
+    Ok(())
+}
+
+fn navigation_frame(ctx: &Context, editor: &mut TextCardEditor, events: Vec<Event>, time: f64) {
+    let mut raw = RawInput {
+        events,
+        time: Some(time),
+        screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(700., 500.))),
+        ..Default::default()
+    };
+    editor.prepare_inline_input(ctx, &mut raw, false);
+    let _full = ctx.run_ui(raw, |root| {
+        egui::CentralPanel::default().show(root, |ui| {
+            ui.interact(
+                Rect::from_min_size(Pos2::new(5., 40.), Vec2::new(25., 30.)),
+                egui::Id::new("neighbor-before"),
+                egui::Sense::click(),
+            );
+            let rect = Rect::from_min_size(Pos2::new(40., 40.), Vec2::new(300., 180.));
+            ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
+                ui.set_clip_rect(rect);
+                editor.show_inline(ui, rect, 1.);
+            });
+            ui.interact(
+                Rect::from_min_size(Pos2::new(400., 40.), Vec2::new(40., 30.)),
+                egui::Id::new("neighbor-after"),
+                egui::Sense::click(),
+            );
+        });
+    });
+}
+
+#[test]
+fn initial_arrow_should_move_the_caret_without_moving_focus_to_a_neighbor() -> TestResult {
+    let session = session()?;
+    let mut editor = TextCardEditor::new(&session, "a")?;
+    *editor.text_mut() = "ab".into();
+    let ctx = Context::default();
+    creation_handoff(&ctx, &mut editor)?;
+    let card_id = ctx.memory(|memory| memory.focused()).ok_or("card focus")?;
+    navigation_frame(
+        &ctx,
+        &mut editor,
+        vec![key(Key::ArrowLeft, Modifiers::NONE)],
+        0.,
+    );
+    assert_eq!(ctx.memory(|memory| memory.focused()), Some(card_id));
+    navigation_frame(&ctx, &mut editor, vec![Event::Text("X".into())], 1.);
+    assert_eq!(editor.text(), "aXb");
+    Ok(())
+}
+
+#[test]
+fn initial_tab_and_shift_tab_should_keep_native_focus_navigation() -> TestResult {
+    for (modifiers, target) in [
+        (Modifiers::NONE, "neighbor-after"),
+        (Modifiers::SHIFT, "neighbor-before"),
+    ] {
+        let session = session()?;
+        let mut editor = TextCardEditor::new(&session, "a")?;
+        let ctx = Context::default();
+        creation_handoff(&ctx, &mut editor)?;
+        navigation_frame(&ctx, &mut editor, vec![key(Key::Tab, modifiers)], 0.);
+        // egui deliberately applies reverse focus navigation on the following pass.
+        navigation_frame(&ctx, &mut editor, vec![], 1.);
+        assert_eq!(
+            ctx.memory(|memory| memory.focused()),
+            Some(egui::Id::new(target))
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn initial_accessibility_focus_should_not_be_overridden_by_arrow_ownership() -> TestResult {
+    let session = session()?;
+    let mut editor = TextCardEditor::new(&session, "a")?;
+    let ctx = Context::default();
+    creation_handoff(&ctx, &mut editor)?;
+    let target = egui::Id::new("neighbor-after");
+    navigation_frame(
+        &ctx,
+        &mut editor,
+        vec![
+            key(Key::ArrowLeft, Modifiers::NONE),
+            Event::AccessKitActionRequest(egui::accesskit::ActionRequest {
+                action: egui::accesskit::Action::Focus,
+                target_node: target.accesskit_id(),
+                target_tree: egui::accesskit::TreeId::ROOT,
+                data: None,
+            }),
+        ],
+        0.,
+    );
+    assert_eq!(ctx.memory(|memory| memory.focused()), Some(target));
+    Ok(())
+}
+
+#[test]
+fn queued_escape_should_expire_when_ownership_is_blocked_before_mount() -> TestResult {
+    for guard in ["disabled-mount", "other-field", "blocked-hook"] {
+        let session = session()?;
+        let mut editor = TextCardEditor::new(&session, "a")?;
+        let ctx = Context::default();
+        creation_handoff(&ctx, &mut editor)?;
+        let mut raw = RawInput {
+            events: vec![key(Key::Escape, Modifiers::NONE)],
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(700., 500.))),
+            ..Default::default()
+        };
+        editor.prepare_inline_input(&ctx, &mut raw, false);
+        assert!(raw.events.is_empty());
+        if guard == "other-field" {
+            ctx.memory_mut(|memory| memory.request_focus(egui::Id::new("modal-input")));
+        }
+        if guard == "blocked-hook" {
+            editor.prepare_inline_input(&ctx, &mut raw, true);
+        }
+        let mut cancelled = false;
+        let _full = ctx.run_ui(raw, |root| {
+            egui::CentralPanel::default().show(root, |ui| {
+                ui.add_enabled_ui(guard != "disabled-mount", |ui| {
+                    let rect = Rect::from_min_size(Pos2::new(40., 40.), Vec2::new(300., 180.));
+                    cancelled = editor.show_inline(ui, rect, 1.).cancelled;
+                });
+            });
+        });
+        assert!(!cancelled, "{guard}");
+        let output = frame(&ctx, &mut editor, vec![], 1., true, 1.);
+        assert!(!output.cancelled, "{guard}");
+        assert_eq!(editor.text(), "Original 😀");
+    }
+    Ok(())
+}
+
+#[test]
+fn another_native_fields_composition_should_not_become_card_input_ownership() -> TestResult {
+    let session = session()?;
+    let mut editor = TextCardEditor::new(&session, "a")?;
+    let ctx = Context::default();
+    creation_handoff(&ctx, &mut editor)?;
+    frame(&ctx, &mut editor, vec![], 0., true, 1.);
+    let mut raw = RawInput {
+        events: vec![Event::Ime(egui::ImeEvent::Preedit {
+            text: "別の入力".into(),
+            active_range_chars: Some(0..4),
+        })],
+        screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(700., 500.))),
+        time: Some(1.),
+        ..Default::default()
+    };
+    let other_id = egui::Id::new("another-native-field");
+    let mut other_text = String::new();
+    editor.prepare_inline_input(&ctx, &mut raw, false);
+    let mut output = InlineTextOutput::default();
+    let _full = ctx.run_ui(raw, |root| {
+        egui::CentralPanel::default().show(root, |ui| {
+            ui.memory_mut(|memory| memory.request_focus(other_id));
+            ui.add(egui::TextEdit::singleline(&mut other_text).id(other_id));
+            let rect = Rect::from_min_size(Pos2::new(40., 80.), Vec2::new(300., 180.));
+            output = editor.show_inline(ui, rect, 1.);
+        });
+    });
+    assert_eq!(other_text, "別の入力");
+    assert_eq!(editor.text(), "Original 😀");
+    assert!(!output.composing && !output.input.keyboard_captured);
+    assert!(!output.cancelled && !output.done_requested);
+    Ok(())
+}
+
+#[test]
+fn queued_escape_should_survive_eframe_deferred_hooks_until_exactly_one_mount() -> TestResult {
+    let session = session()?;
+    let mut editor = TextCardEditor::new(&session, "a")?;
+    let ctx = Context::default();
+    creation_handoff(&ctx, &mut editor)?;
+    let mut raw = RawInput {
+        events: vec![key(Key::Escape, Modifiers::NONE)],
+        ..Default::default()
+    };
+    // eframe's logic-only update may retain post-hook raw input without mounting UI.
+    editor.prepare_inline_input(&ctx, &mut raw, false);
+    assert!(raw.events.is_empty());
+    editor.prepare_inline_input(&ctx, &mut raw, false);
+    let output = frame(&ctx, &mut editor, raw.events, 0., true, 1.);
+    assert!(output.cancelled && !output.done_requested);
+    assert!(!frame(&ctx, &mut editor, vec![], 1., true, 1.).cancelled);
+    assert_eq!(editor.text(), "Original 😀");
     Ok(())
 }

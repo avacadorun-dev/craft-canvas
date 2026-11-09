@@ -22,6 +22,9 @@ pub struct TextCardEditor {
     id: Id,
     submitted: Option<String>,
     insertion: Option<Arc<NodeRecord>>,
+    inline_viewport: Option<egui::ViewportId>,
+    inline_cancel_requested: bool,
+    initial_arrow_navigation: bool,
 }
 /// One explicit native source-editor outcome; Cancel never emits a mutation.
 #[derive(Default)]
@@ -89,6 +92,9 @@ impl TextCardEditor {
             )),
             submitted: None,
             insertion,
+            inline_viewport: None,
+            inline_cancel_requested: false,
+            initial_arrow_navigation: false,
         })
     }
     /// Whether this draft still awaits the host's exact insertion acknowledgement.
@@ -180,52 +186,148 @@ impl TextCardEditor {
         self.submitted = None;
         Ok(())
     }
+    /// Acquire inline focus in the actual creation/activation frame, before later input.
+    /// Call during the owning viewport's UI pass, not repeatedly during painting.
+    /// Repeated activation of an already focused editor does not interrupt native IME.
+    ///
+    /// # Errors
+    /// Refuses to move this retained input into a different viewport.
+    pub fn begin_inline(&mut self, ctx: &egui::Context) -> Result<()> {
+        let viewport = ctx.viewport_id();
+        if self.inline_viewport.is_some_and(|bound| bound != viewport) {
+            return Err(CanvasError::Invalid(
+                "inline editor belongs to another viewport".into(),
+            ));
+        }
+        self.inline_viewport = Some(viewport);
+        ctx.memory_mut(|memory| {
+            if !memory.has_focus(self.id) {
+                memory.request_focus(self.id);
+            }
+        });
+        Ok(())
+    }
+    /// Route only this active inline editor's Escape before egui focus navigation.
+    /// Call from the host's `eframe::App::raw_input_hook` (or before `Context::run`).
+    /// `blocked` includes any modal, disabled editor or host input handoff.
+    /// Pending commands survive repeated hooks before UI mounting (eframe may defer
+    /// painting), but expire on blocked/foreign input or a disabled/unfocused mount.
+    /// Text, paste and IME events are neither removed nor re-injected. Unknown focus
+    /// or another viewport leaves all events untouched; this is not multiwindow routing.
+    pub fn prepare_inline_input(
+        &mut self,
+        ctx: &egui::Context,
+        input: &mut egui::RawInput,
+        blocked: bool,
+    ) {
+        self.initial_arrow_navigation = false;
+        if blocked
+            || !input.focused
+            || self.inline_viewport != Some(input.viewport_id)
+            || !ctx.memory(|memory| memory.has_focus(self.id))
+        {
+            self.inline_cancel_requested = false;
+            return;
+        }
+        let composing = self.composing
+            || input
+                .events
+                .iter()
+                .any(|event| matches!(event, egui::Event::Ime(_)));
+        input.events.retain(|event| {
+            if let egui::Event::Key {
+                key: Key::Escape,
+                pressed: true,
+                repeat,
+                modifiers,
+                ..
+            } = event
+                && modifiers.is_none()
+            {
+                if !composing && !*repeat {
+                    self.inline_cancel_requested = true;
+                }
+                false
+            } else {
+                true
+            }
+        });
+        // egui installs TextEdit's key filter only after its first focused pass.
+        // Detect only a batch whose pending focus direction can belong to this editor.
+        self.initial_arrow_navigation = self.focus
+            && input.events.iter().any(|event| matches!(event,
+                egui::Event::Key { key: Key::ArrowUp | Key::ArrowDown | Key::ArrowLeft | Key::ArrowRight,
+                    pressed: true, modifiers, .. } if modifiers.is_none()))
+            && input.events.iter().all(|event| match event {
+                egui::Event::Key { key: Key::ArrowUp | Key::ArrowDown | Key::ArrowLeft | Key::ArrowRight,
+                    modifiers, .. } => modifiers.is_none(),
+                egui::Event::Text(_) | egui::Event::PointerMoved(_) | egui::Event::MouseMoved(_) => true,
+                _ => false,
+            });
+    }
     /// Mount the real multiline native input inside the card's reserved clipped body.
     /// Local selection, clipboard and Undo remain TextEdit-owned at the actual card zoom.
     /// IME composition and losing OS focus never become Done/Cancel or a board shortcut.
     pub fn show_inline(&mut self, ui: &mut Ui, rect: egui::Rect, zoom: f64) -> InlineTextOutput {
-        let initial_focus = std::mem::take(&mut self.focus);
-        if initial_focus {
-            // A newly mounted card can already have typing in this frame's event queue.
-            ui.memory_mut(|memory| memory.request_focus(self.id));
+        if self
+            .inline_viewport
+            .is_some_and(|bound| bound != ui.ctx().viewport_id())
+        {
+            return InlineTextOutput::default();
         }
+        let enabled = ui.is_enabled();
+        let initial_focus = enabled && std::mem::take(&mut self.focus);
         let zoom = if zoom.is_finite() && zoom > 0.0 {
             zoom
         } else {
             1.0
         };
-        let ime_frame = ui.input(|input| {
-            input
-                .events
-                .iter()
-                .any(|event| matches!(event, egui::Event::Ime(_)))
-        });
-        ui.input(|input| {
-            for event in &input.events {
-                match event {
-                    egui::Event::Ime(egui::ImeEvent::Preedit { text, .. }) => {
-                        self.composing = !text.is_empty()
+        let ime_frame = enabled
+            && ui.input(|input| {
+                input
+                    .events
+                    .iter()
+                    .any(|event| matches!(event, egui::Event::Ime(_)))
+            });
+        if enabled && ui.memory(|memory| memory.has_focus(self.id)) {
+            ui.input(|input| {
+                for event in &input.events {
+                    match event {
+                        egui::Event::Ime(egui::ImeEvent::Preedit { text, .. }) => {
+                            self.composing = !text.is_empty()
+                        }
+                        egui::Event::Ime(egui::ImeEvent::Commit(_)) => self.composing = false,
+                        _ => {}
                     }
-                    egui::Event::Ime(egui::ImeEvent::Commit(_)) => self.composing = false,
-                    _ => {}
                 }
-            }
-        });
-        let composing = self.composing || ime_frame;
-        let owns_focus = ui.memory(|memory| memory.has_focus(self.id));
+            });
+        }
+        let composing =
+            self.composing || (ime_frame && ui.memory(|memory| memory.has_focus(self.id)));
+        if initial_focus && self.inline_viewport.is_none() && !composing && !ime_frame {
+            // Compatibility for hosts mounting immediately in the activation frame.
+            // Delayed first-frame input requires begin_inline at the actual creation intent.
+            self.inline_viewport = Some(ui.ctx().viewport_id());
+            ui.memory_mut(|memory| {
+                if !memory.has_focus(self.id) {
+                    memory.request_focus(self.id);
+                }
+            });
+        }
+        let owns_focus = enabled
+            && ui.input(|input| input.focused)
+            && ui.memory(|memory| memory.has_focus(self.id));
         if composing && owns_focus {
             // The OS IME owns these keys; TextEdit must not turn them into blur/newline actions.
             ui.input_mut(|input| {
                 input.consume_key(egui::Modifiers::COMMAND, Key::Enter);
-                input.consume_key(egui::Modifiers::NONE, Key::Escape);
             });
         }
         let done_key = !composing
             && owns_focus
             && ui.input_mut(|input| input.consume_key(egui::Modifiers::COMMAND, Key::Enter));
-        let cancel_key = !composing
-            && owns_focus
-            && ui.input_mut(|input| input.consume_key(egui::Modifiers::NONE, Key::Escape));
+        let cancel_key =
+            std::mem::take(&mut self.inline_cancel_requested) && owns_focus && !composing;
         let response = egui::ScrollArea::vertical()
             .id_salt(("inline-card-scroll", self.id))
             .max_height(rect.height())
@@ -234,6 +336,13 @@ impl TextCardEditor {
                 ui.add(
                     egui::TextEdit::multiline(&mut self.text)
                         .id(self.id)
+                        .interactive(enabled)
+                        .event_filter(egui::EventFilter {
+                            horizontal_arrows: true,
+                            vertical_arrows: true,
+                            escape: true,
+                            tab: false,
+                        })
                         .font(egui::FontId::monospace(
                             (13.0 * zoom as f32).clamp(8.0, 42.0),
                         ))
@@ -247,11 +356,20 @@ impl TextCardEditor {
                 )
             })
             .inner;
-        if initial_focus {
-            // The creating toolbar/board click must not take focus back from this card.
+        if initial_focus
+            && !composing
+            && ui.input(|input| input.focused && input.pointer.primary_pressed())
+            && ui.memory(|memory| memory.focused().is_none())
+        {
+            // An immediate mount may still share the creating toolbar click.
+            // Never renew an existing focus or reset an active native composition.
             response.request_focus();
         }
-        let deliberate_blur = !initial_focus
+        if std::mem::take(&mut self.initial_arrow_navigation) && enabled && response.has_focus() {
+            ui.memory_mut(|memory| memory.move_focus(egui::FocusDirection::None));
+        }
+        let deliberate_blur = enabled
+            && !initial_focus
             && !composing
             && response.lost_focus()
             && ui.input(|input| input.focused && input.pointer.primary_pressed());
@@ -262,7 +380,7 @@ impl TextCardEditor {
             composing,
             input: crate::NodeBodyResponse {
                 pointer_captured: ui.rect_contains_pointer(rect),
-                keyboard_captured: response.has_focus() || composing,
+                keyboard_captured: enabled && (response.has_focus() || composing),
             },
         }
     }
