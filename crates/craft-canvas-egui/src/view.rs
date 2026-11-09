@@ -15,6 +15,8 @@ use std::collections::BTreeSet;
 pub struct CanvasViewLabels {
     /// Accessible viewport name.
     pub canvas: String,
+    /// Hover hint for pointer/keyboard entry into an editable text card.
+    pub edit_text_hint: String,
     /// Explicit save action.
     pub save: String,
     /// Explicit cancel action.
@@ -26,6 +28,7 @@ impl Default for CanvasViewLabels {
     fn default() -> Self {
         Self {
             canvas: "Canvas".into(),
+            edit_text_hint: "Double-click or press Enter to edit".into(),
             save: "Save".into(),
             cancel: "Cancel".into(),
             text_source: "Markdown source".into(),
@@ -431,6 +434,16 @@ impl CanvasView {
                     },
                 )
             });
+            let node_response = if config.interactive
+                && !config.shortcuts_blocked
+                && ui.is_enabled()
+                && matches!(node.kind(), NodeKind::Text)
+                && dialect.node_policy(node).movable
+            {
+                node_response.on_hover_text(&config.labels.edit_text_hint)
+            } else {
+                node_response
+            };
             if node_response.gained_focus() {
                 self.selection = Selection {
                     nodes: BTreeSet::from([node.id().into()]),
@@ -693,7 +706,7 @@ impl CanvasView {
                 }
             }
             if !keyboard_captured && (response.has_focus() || node_focus) {
-                self.keyboard(ui, session, &mut intents);
+                self.keyboard(ui, session, dialect, response.id, config.id, &mut intents);
             }
         }
         CanvasViewOutput {
@@ -704,8 +717,51 @@ impl CanvasView {
             nodes: observed,
         }
     }
-    fn keyboard(&mut self, ui: &mut Ui, session: &CanvasSession, intents: &mut Vec<CanvasIntent>) {
+    fn keyboard(
+        &mut self,
+        ui: &mut Ui,
+        session: &CanvasSession,
+        dialect: &dyn CanvasDialect,
+        canvas_id: Id,
+        node_namespace: Id,
+        intents: &mut Vec<CanvasIntent>,
+    ) {
         let base = session.identity();
+        if ui.is_enabled()
+            && self.gesture.is_none()
+            && self.selection.nodes.len() == 1
+            && self.selection.edges.is_empty()
+            && let Some(id) = self.selection.nodes.first()
+            && let Some(node) = session.document().node(id)
+            && matches!(node.kind(), NodeKind::Text)
+            && dialect.node_policy(node).movable
+            && ui.memory(|memory| {
+                let focus = memory.focused();
+                focus == Some(canvas_id) || focus == Some(node_namespace.with(("node", node.id())))
+            })
+            && ui.input(|input| {
+                input.focused
+                    && !input.events.iter().any(|event| matches!(event, egui::Event::Ime(_)))
+            })
+            && ui.input_mut(|input| {
+                // Logical shortcut matching ignores extra Shift/Alt modifiers.
+                let event = input.events.iter().position(|event| matches!(event,
+                    egui::Event::Key { key: Key::Enter, pressed: true, repeat: false, modifiers, .. }
+                        if modifiers.is_none()));
+                if let Some(event) = event {
+                    input.events.remove(event);
+                    true
+                } else {
+                    false
+                }
+            })
+        {
+            intents.push(CanvasIntent::EditText {
+                base,
+                node_id: node.id().into(),
+            });
+            return;
+        }
         let command = egui::Modifiers::COMMAND;
         let redo = egui::Modifiers {
             shift: true,

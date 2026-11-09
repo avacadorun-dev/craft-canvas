@@ -87,3 +87,21 @@ Native regression evidence SHALL retain and inspect FullOutput platform IME sign
 - **WHEN** a deferred input receives a completed primary click outside the card, or a primary press when the host uses a press-based focus policy
 - **THEN** ordinary focus loss SHALL remain authoritative and SHALL NOT be mistaken for the earlier creation click
 - **AND** only legacy immediate mounting MAY retain the creating pointer action's focus exemption.
+
+### Requirement: DCE-5 keyboard entry into a selected text card
+
+Unmodified, non-repeating Enter SHALL request the existing exact-base EditText intent for exactly one selected existing text node, with no selected edges, only while the enabled, interactive Canvas viewport or that selected node owns native keyboard focus. The adapter SHALL use the host dialect's existing movable permission as a conservative lock check, matching the current host edit authorization; it SHALL NOT create new edit authority.
+
+#### Scenario: Enter opens the selected card
+- **WHEN** one unlocked text card is selected and the Canvas viewport or that card owns focus
+- **AND** unmodified Enter is pressed outside an IME event batch or active Canvas gesture
+- **THEN** the view SHALL emit exactly one EditText intent carrying the current session identity and selected node ID
+- **AND** the host SHALL arm the ordinary deferred native editor after painting, without mutating canonical text or publishing a dangling accessibility focus ID
+- **AND** the next native text, paste or composition batch SHALL reach that retained editor through the existing pre-input lifecycle.
+
+#### Scenario: Enter belongs to another interaction
+- **WHEN** input is owned by a child editor, another field, IME, an unfocused window, a disabled or blocked Canvas, a locked/non-text node, a gesture or a multi-selection
+- **OR** Enter is modified or repeated
+- **THEN** Canvas SHALL NOT consume Enter or emit an edit intent.
+
+Eligible text cards SHALL expose a host-localized hover hint for double-click and Enter editing. The host SHALL still validate EditText's exact base, current lock state and application authorization.

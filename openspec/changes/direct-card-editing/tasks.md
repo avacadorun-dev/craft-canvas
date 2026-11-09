@@ -6,3 +6,5 @@
 - [x] Add immediate same-batch Cancel freeze and current-frame IME precedence regressions (source authored; hosted execution pending).
 - [ ] Pass exact-source all-platform hosted Rust tests/fmt/strict Clippy.
 - [ ] Qualify host checkpoint/retry/new-card focus/dirty navigation and actual compiled native editing.
+
+- [ ] Implement exact-owner Enter activation, localized discoverability and actual event/AccessKit regressions; qualify independently before host adoption.
