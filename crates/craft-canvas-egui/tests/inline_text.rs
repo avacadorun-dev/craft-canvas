@@ -22,6 +22,12 @@ fn key(key: Key, modifiers: Modifiers) -> Event {
         modifiers,
     }
 }
+/// Release renderer/platform work in headless tests while retaining native IME evidence.
+fn finish_headless_frame(mut output: egui::FullOutput) -> egui::FullOutput {
+    output.textures_delta.clear();
+    output.platform_output.commands.clear();
+    output
+}
 fn frame(
     ctx: &Context,
     editor: &mut TextCardEditor,
@@ -51,7 +57,7 @@ fn frame_with_platform(
         ..Default::default()
     };
     editor.prepare_inline_input(ctx, &mut raw, !enabled);
-    let full = ctx.run_ui(raw, |root| {
+    let full = finish_headless_frame(ctx.run_ui(raw, |root| {
         egui::CentralPanel::default().show(root, |ui| {
             let rect = Rect::from_min_size(Pos2::new(40., 40.), Vec2::new(300., 180.));
             ui.add_enabled_ui(enabled, |ui| {
@@ -61,7 +67,7 @@ fn frame_with_platform(
                 });
             });
         });
-    });
+    }));
     (output, full)
 }
 
@@ -71,7 +77,7 @@ fn creation_handoff(ctx: &Context, editor: &mut TextCardEditor) -> TestResult {
     let previous_id = egui::Id::new("previous-input");
     let mut activation = None;
     for (time, create) in [(-2., false), (-1., true)] {
-        let full = ctx.run_ui(
+        let full = finish_headless_frame(ctx.run_ui(
             RawInput {
                 events: if create {
                     vec![key(Key::N, Modifiers::COMMAND)]
@@ -93,7 +99,7 @@ fn creation_handoff(ctx: &Context, editor: &mut TextCardEditor) -> TestResult {
                     }
                 });
             },
-        );
+        ));
         // A real prior text input enabled native IME before the creation handoff.
         assert!(full.platform_output.ime.is_some());
     }
@@ -290,13 +296,11 @@ fn inline_and_optional_source_pane_share_one_retained_exact_draft() -> TestResul
     *editor.text_mut() = "Shared draft".into();
     let ctx = Context::default();
     frame(&ctx, &mut editor, vec![], 0., true, f64::NAN);
-    let mut frame = ctx.run_ui(RawInput::default(), |root| {
+    let _frame = finish_headless_frame(ctx.run_ui(RawInput::default(), |root| {
         egui::CentralPanel::default().show(root, |ui| {
             let _ = editor.show(ui, &CanvasViewLabels::default());
         });
-    });
-    frame.textures_delta.clear();
-    frame.platform_output.commands.clear();
+    }));
     assert_eq!(editor.text(), "Shared draft");
     assert!(editor.dirty());
     Ok(())
@@ -490,7 +494,7 @@ fn pending_surface_should_use_the_real_card_host_without_mutating_canonical_or_e
             ..Default::default()
         };
         host.editor.prepare_inline_input(&ctx, &mut raw, false);
-        let full = ctx.run_ui(raw, |root| {
+        let full = finish_headless_frame(ctx.run_ui(raw, |root| {
             egui::CentralPanel::default().show(root, |ui| {
                 let mut config =
                     craft_canvas_egui::CanvasViewConfig::new(egui::Id::new("pending-board"), ui);
@@ -508,7 +512,7 @@ fn pending_surface_should_use_the_real_card_host_without_mutating_canonical_or_e
                     1
                 );
             });
-        });
+        }));
         assert_eq!(full.platform_output.ime.is_some(), index != 2);
         assert!(host.output.input.keyboard_captured);
         assert!(!host.output.done_requested);
@@ -857,7 +861,7 @@ fn navigation_frame(ctx: &Context, editor: &mut TextCardEditor, events: Vec<Even
         ..Default::default()
     };
     editor.prepare_inline_input(ctx, &mut raw, false);
-    let _full = ctx.run_ui(raw, |root| {
+    let _full = finish_headless_frame(ctx.run_ui(raw, |root| {
         egui::CentralPanel::default().show(root, |ui| {
             ui.interact(
                 Rect::from_min_size(Pos2::new(5., 40.), Vec2::new(25., 30.)),
@@ -875,7 +879,7 @@ fn navigation_frame(ctx: &Context, editor: &mut TextCardEditor, events: Vec<Even
                 egui::Sense::click(),
             );
         });
-    });
+    }));
 }
 
 #[test]
@@ -965,14 +969,14 @@ fn queued_escape_should_expire_when_ownership_is_blocked_before_mount() -> TestR
             editor.prepare_inline_input(&ctx, &mut raw, true);
         }
         let mut cancelled = false;
-        let _full = ctx.run_ui(raw, |root| {
+        let _full = finish_headless_frame(ctx.run_ui(raw, |root| {
             egui::CentralPanel::default().show(root, |ui| {
                 ui.add_enabled_ui(guard != "disabled-mount", |ui| {
                     let rect = Rect::from_min_size(Pos2::new(40., 40.), Vec2::new(300., 180.));
                     cancelled = editor.show_inline(ui, rect, 1.).cancelled;
                 });
             });
-        });
+        }));
         assert!(!cancelled, "{guard}");
         let output = frame(&ctx, &mut editor, vec![], 1., true, 1.);
         assert!(!output.cancelled, "{guard}");
@@ -1001,14 +1005,14 @@ fn another_native_fields_composition_should_not_become_card_input_ownership() ->
     let mut other_text = String::new();
     editor.prepare_inline_input(&ctx, &mut raw, false);
     let mut output = InlineTextOutput::default();
-    let _full = ctx.run_ui(raw, |root| {
+    let _full = finish_headless_frame(ctx.run_ui(raw, |root| {
         egui::CentralPanel::default().show(root, |ui| {
             ui.memory_mut(|memory| memory.request_focus(other_id));
             ui.add(egui::TextEdit::singleline(&mut other_text).id(other_id));
             let rect = Rect::from_min_size(Pos2::new(40., 80.), Vec2::new(300., 180.));
             output = editor.show_inline(ui, rect, 1.);
         });
-    });
+    }));
     assert_eq!(other_text, "別の入力");
     assert_eq!(editor.text(), "Original 😀");
     assert!(!output.composing && !output.input.keyboard_captured);
