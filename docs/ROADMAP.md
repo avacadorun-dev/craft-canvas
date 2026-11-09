@@ -1,6 +1,6 @@
 # CraftCanvas roadmap
 
-Updated2026-11-09. **One active library issue, strict numerical order.** Current implementation is the qualified partial foundation99db516; no production/full-parity claim. This roadmap is the execution authority. The [production plan](PRODUCTION_PLAN.md) defines architecture/readiness, [RF inventory](REACT_FLOW_PARITY.md) maps the exact source API and behaviors, and [consumer contract](WRITERCRAFT_CONSUMER.md) preserves every original Studio B01–B26 requirement.
+Updated2026-11-10. **One active library issue, strict numerical order.** Current qualified implementation is d2bdaec through CC-03; no production/full-parity claim. This roadmap is the execution authority. The [production plan](PRODUCTION_PLAN.md) defines architecture/readiness, [RF inventory](REACT_FLOW_PARITY.md) maps the exact source API and behaviors, and [consumer contract](WRITERCRAFT_CONSUMER.md) preserves every original Studio B01–B26 requirement.
 
 ## Two deliverables
 
@@ -15,8 +15,8 @@ A separate WriterCraft agent is authorized to complete a coherent non-Canvas alp
 |---|---|---|---|
 | CC-01 | [#1](https://github.com/avacadorun-dev/craft-canvas/issues/1) | Full source contract, native equivalents and independent omission review | Complete — [9da1c24](https://github.com/avacadorun-dev/craft-canvas/commit/9da1c24f08efd2742239996401da3f590506d7f0) |
 | CC-02 | [#2](https://github.com/avacadorun-dev/craft-canvas/issues/2) | Named/dynamic ports, validation and compatible legacy codec | Complete — [99db516](https://github.com/avacadorun-dev/craft-canvas/commit/99db5166f287831c96da7ba6630a2bb4d620ee4e) |
-| CC-03 | [#3](https://github.com/avacadorun-dev/craft-canvas/issues/3) | Direct owned creation/reconnection with cancellation | Active |
-| CC-04 | [#4](https://github.com/avacadorun-dev/craft-canvas/issues/4) | Selection, movement, resizing, rotation, groups and host drop insertion | Queued |
+| CC-03 | [#3](https://github.com/avacadorun-dev/craft-canvas/issues/3) | Direct owned creation/reconnection with cancellation | Complete — [d2bdaec](CC03_ACCEPTANCE.md) |
+| CC-04 | [#4](https://github.com/avacadorun-dev/craft-canvas/issues/4) | Selection, movement, resizing, rotation, groups and host drop insertion | Active |
 | CC-05 | [#5](https://github.com/avacadorun-dev/craft-canvas/issues/5) | Custom node/edge/handle/label native composition | Queued |
 | CC-06 | [#6](https://github.com/avacadorun-dev/craft-canvas/issues/6) | Camera navigation, minimap, controls and overlays | Queued |
 | CC-07 | [#7](https://github.com/avacadorun-dev/craft-canvas/issues/7) | Drawing, shapes and frame primitives | Queued |
@@ -40,7 +40,7 @@ A separate WriterCraft agent is authorized to complete a coherent non-Canvas alp
 
 ## Planning estimate
 
-Preparation is this CC-01 deliverable. The WriterCraft-ready work is eleven subsequent verified issues, not one connector patch. Initial implementation planning is **several weeks of engineering work**, with low confidence until the named-port and direct-interaction milestones expose integration costs. This is an effort estimate, not a calendar promise or reason to wait for upstream. Re-estimate after CC-03 using actual implementation/hosted/native review results, and report remaining issues rather than an invented percentage. Full standalone parity follows as its own explicit checkpoint.
+After CC-03, **nine milestones remain for WriterCraft-ready delivery (CC-04–CC-12)**, followed by CC-13 and CC-14 for complete standalone parity and production acceptance. CC-03 exposed real input ownership and coalesced-drag defects that required correction beyond passing controller checks. The revised estimate remains **several weeks of engineering work**, with substantial uncertainty around nested transforms, native composition, accessibility and measured capacity. This is an effort estimate, not a calendar promise; issue counts are not equal-sized work units or a percentage. Re-estimate at the next accepted manipulation/composition checkpoints using actual evidence.
 
 ## Package status
 

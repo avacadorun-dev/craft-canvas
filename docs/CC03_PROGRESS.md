@@ -1,6 +1,6 @@
 # CC-03 direct native connection progress
 
-Updated 2026-11-09 UTC. Issue [#3](https://github.com/avacadorun-dev/craft-canvas/issues/3) is the only active library issue. CC-02's accepted source remains `99db5166f287831c96da7ba6630a2bb4d620ee4e`. Corrected CC-03 candidate `d2bdaeca02ca028693222cf16153ff7c34c7b874` passed hosted qualification and its29-step scripted native journey. Fresh ordinary acceptance remains required after the earlier23b87d1 movement failure; the bounded follow-up window did not produce movement evidence. The later entries supersede historical pending-build paragraphs. No consumer pin changes or app preview changes are included.
+Updated 2026-11-10 local date. CC-03 is complete at `d2bdaeca02ca028693222cf16153ff7c34c7b874`: exact hosted qualification, independently reviewed29-step native capture, owner-confirmed ordinary edit/move/connect/Undo/text-selection and overlay refusal/recovery, and final independent acceptance. [The final disposition](CC03_ACCEPTANCE.md) supersedes historical pending paragraphs below. CC-04 is the next sole active library issue. No consumer pin or WriterCraft preview changes are included.
 
 ## Integrated candidate
 
@@ -116,3 +116,14 @@ The ordinary reviewer subsequently reported the actual attempt: correct full sou
 The second bounded ordinary attempt failed at the computer-use tool boundary: its sole application lookup returned an abort after100.4 seconds, without API documentation or UI state. No click/type/drag was sent. Root stopped only the identified synthetic process and retained the revision0 log; no product interaction failure is established. Attempt report SHA256: `83a977cec9d4d4c9ae2a15ab0c4f8ba7bcbdf7a3a27ef5f9496249c1b6b87b88`.
 
 The user then requested reopening the exact candidate and offered to perform the scenario personally. Root opened the qualified d2bdaec bundle through macOS Launch Services and handed control to the user. That window is now an explored user preview: do not replace, close or automate it without a new clear instruction. Owner observations and complete ordinary acceptance remain pending; no issue closure or data migration is implied.
+
+### Owner confirms the corrected ordinary scenario
+
+On the exact reopened d2bdaec macOS preview, the user confirmed that all five requested actions worked: enter a synthetic note; drag its header with text retained; connect its moved upper-right port to Scene's upper-left port; Undo twice to remove the connection and restore the position while retaining text; select text without moving the card. This is owner-reported native evidence for those actions, not a fabricated machine trace. It resolves the ordinary movement/input-handoff rejection for this scenario. The [feedback record](design/USER_FEEDBACK.md#cv-03-follow-up--ordinary-five-step-scenario-confirmed) retains its scope. Root requested the final independent CC-03 criterion audit before closure or advancing to CC-04; overlay and other applicable requirements cannot be inferred from this five-step result.
+
+
+### Final overlay result and independent acceptance
+
+The user confirmed the final scenario on the same exact d2bdaec preview: with Testing → Overlay exclusion enabled, dragging to the covered port creates no connection, moves no card and leaves no stuck preview. Disabling exclusion restores connection creation; Undo removes it while preserving the draft. This is owner-reported visible behavior, not a newly recorded trace, counter sequence or screenshot set. No extra inert-button action is inferred.
+
+The independent reviewer accepted every scoped issue/OpenSpec criterion using the exact-current hosted/native evidence, reviewed unchanged-code bridge for historical ordinary connection observations, and current owner results. Final disposition SHA256: `eeddf9223f91dc2bdd0d9fd674ae0a16b8f0cdd561252d0dd2fb674cd0f8cd1c`; [published disposition](CC03_ACCEPTANCE.md). No applicable CC-03 gap remains. Root accepts this bounded milestone and advances to CC-04 after issue closure. Physical IME/touch, multilingual fonts, Windows/Linux GUI, performance, packaging, full parity and WriterCraft integration retain their later gates. The user-controlled preview is preserved.

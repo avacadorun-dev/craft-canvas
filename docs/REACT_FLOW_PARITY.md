@@ -1,6 +1,6 @@
 # React Flow functional parity inventory
 
-2026-11-09 · **Capability coverage independently reviewed; implementation and native acceptance pending. No row is accepted.**
+Inventory baseline2026-11-09 · **Capability coverage independently reviewed. Rows below retain the initial source findings; milestone qualification updates follow separately. No complete RF row is accepted by a partial milestone.**
 
 ## Objective and frozen baselines
 
@@ -147,6 +147,12 @@ These rows retain the broader requested capability scope. A composition is not f
 | RF-072 | Composition; [Temporary Edges](https://reactflow.dev/examples/edges/temporary-edges) | Explicitly create and manage a ghost-node/incomplete-edge composition after a connection drop, then reconnect to complete it and remove the placeholder, or delete it coherently. A transient preview alone is insufficient. | **Gap:** no incomplete-connection lifecycle/example; canonical placeholder and recovery semantics must be specified. J2, J7, J8. |
 | RF-073 | Composition; [Contextual Zoom](https://reactflow.dev/examples/interaction/contextual-zoom) | Change custom-node detail/content with zoom while preserving data, focus/drafts and stable sizing/port semantics; demonstrate level-of-detail behavior beyond scaling the same text. | **Partial/Host:** body renderer receives zoom; no complete native composition/input qualification. J1, J3, J8. |
 | RF-074 | Pro-reference; [Edge Routing](https://reactflow.dev/examples/edges/edge-routing) | Obstacle-avoiding automatic routing equivalent to the documented libavoid composition, with bounded/cancelable recalculation as geometry changes. A custom path callback or simple orthogonal route alone does not pass. | **Gap:** existing smooth-step geometry does not avoid arbitrary obstacles. Public behavior was inspected; Pro implementation was not. J2, J4, J8. |
+
+## Qualified milestone update — 2026-11-10
+
+CC-02's model/codec boundary is qualified at99db516. CC-03's direct-connection boundary is independently accepted atd2bdaec; see [the precise disposition](CC03_ACCEPTANCE.md). This supersedes the initial absence findings below for named port identity/validation, measured anchors, direct creation/reconnection, routed preview and gesture lifecycle. It does not mark a full RF row accepted or waive the remaining native/composition gates.
+
+RF-012 optional click-to-connect remains a **CC-13** standalone remainder; primary dragging and cancellation are qualified. RF-015 arbitrary preview renderers and the complete standard route family remain **CC-05/CC-13** work; the qualified preview uses shared smooth-step geometry. Full RF-011 physical touch evidence remains **CC-09/CC-13** work. CC-13 must re-audit all complete rows and their configurable options, including RF-008–016, before CC-14 accepts full parity. No current consumer-required connection gesture is removed by those explicit broader remainders.
 
 ## Ordered delivery allocation
 

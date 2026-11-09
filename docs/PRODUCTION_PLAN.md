@@ -22,7 +22,7 @@ Initial reference: [`@xyflow/react`12.12.1 / `@xyflow/system`0.0.84](https://git
 - Existing native editor focus/IME and pointer/keyboard ownership work, qualified connector geometry and provenance.
 - Existing user preview and app pins remain unchanged during library preparation. Retained app/capture/portability work is not discarded or folded into engine commits.
 
-Current foundations are partial. CC-02 qualifies named/dynamic port data, pure validation and guarded model commands. Native named-port geometry/gestures, complete custom rendering and interaction hooks, parent relationships, viewport controls, touch and complete accessibility remain pending. Current library tests are engineering evidence, not production certification.
+Current foundations are partial. CC-02 qualifies named/dynamic port data, pure validation and guarded model commands. CC-03 qualifies native named-port geometry/direct gestures with scoped compiled acceptance at d2bdaec. Complete custom rendering and interaction hooks, parent relationships, viewport controls, physical touch and complete accessibility remain pending. Current library tests are engineering evidence, not production certification.
 
 ## Delivery order and stopping conditions
 
@@ -61,6 +61,6 @@ The first native product target remains macOS ARM64 to match the real consumer. 
 
 ## Current checkpoint and immediate next action
 
-CC-01 completed at9da1c24 with independent preparation review and hosted qualification42626580148. CC-02 completed at99db516 with independent API review and hosted qualification42633082977. CC-03 is active. Reference research ruled out unchanged adoption of the inspected Rust alternatives; the chosen direction is a maintained native implementation on the existing CraftCanvas authority, with selective attributed reuse. CC-01 changed preparation only; CC-02 added the named-port model without new dependencies. CC-03 must use that model rather than the earlier four-side-only gesture proposal.
+CC-01 completed at9da1c24 with independent preparation review and hosted qualification42626580148. CC-02 completed at99db516 with independent API review and hosted qualification42633082977. CC-03 completed at d2bdaec with144 tests per hosted platform and [scoped independent native acceptance](CC03_ACCEPTANCE.md). CC-04 is active. Reference research ruled out unchanged adoption of the inspected Rust alternatives; the chosen direction is a maintained native implementation on the existing CraftCanvas authority, with selective attributed reuse. CC-01 changed preparation only; CC-02 added the named-port model without new dependencies. CC-03 uses that named-port model while retaining legacy four-side compatibility.
 
-Implement CC-03 against the accepted named-port model and exact connection validation contract; specify owned gesture/events, measurement invalidation and cancellation before modifying native input. Reuse the exact current foundation; do not restart the implementation. Keep engine production and WriterCraft full Canvas acceptance explicitly pending throughout.
+Reconcile existing selection, movement, resizing, grouping and drop primitives for CC-04. Specify compatible geometry policies, transform/lifecycle semantics and bounded incremental delivery before changing behavior. Reuse the exact current foundation; do not restart the implementation. Keep engine production and WriterCraft full Canvas acceptance explicitly pending throughout.

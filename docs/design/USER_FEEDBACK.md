@@ -37,3 +37,13 @@ The subsequent independent source audit identified three omissions in the detail
 ## CV-03 follow-up — ordinary movement not accepted
 
 2026-11-09. During the user-authorized quiet native review, exact23b87d1 passed the isolated scripted journey and ordinary connection/recovery operations, but repeated header and unobstructed note-body drags did not move a card. The independent reviewer observed no pending request or retained text focus on the final attempts. CUA uses atomic drags and the ordinary event log was unavailable, so the input-level cause is not yet established. Keep CC-03 open; add a regression for the actual cause and verify the corrected exact native candidate. Do not silently transfer this required coherent-journey failure to CC-04 or claim acceptance from the successful connection fixture.
+
+## CV-03 follow-up — ordinary five-step scenario confirmed
+
+2026-11-10 local date. After root reopened the exact qualified `d2bdaeca02ca028693222cf16153ff7c34c7b874` macOS bundle, the user personally checked the five-step scenario and replied that everything worked. The steps were: type a short synthetic note; drag the Note card by its header with the draft retained; create a connection from its moved upper-right port to Scene's upper-left port; Undo twice to remove the new connection and restore card position while retaining the draft; select text inside the editor without moving the card.
+
+This is explicit owner-reported native success for that scenario. It resolves the reported ordinary movement/recovery gap in those five actions; it is not a reconstructed event trace, physical IME/touch observation, overlay acceptance or full Canvas parity. Final CC-03 acceptance still audits the complete named criteria. The explored preview remains under the user's control.
+
+## CV-03 follow-up — overlay refusal and recovery confirmed
+
+2026-11-10 local date. The user confirmed the final representative check on the same exact d2bdaec preview: enabling Overlay exclusion blocks a drag to the covered port without connection creation, card movement or a stuck preview; disabling it allows the connection, and Undo removes it while retaining the note draft. The report is visible native outcome evidence, not a new event log or counter reading. Together with the previous five-step result and the independently audited current/historical evidence, this resolves the scoped CC-03 rejection. [Independent acceptance](../CC03_ACCEPTANCE.md) preserves all broader production, input and consumer obligations. The explored preview remains under user control.

@@ -19,16 +19,16 @@ The baseline uses **Rust 1.95**, edition 2024, and **egui 0.36.2**. The planned 
 
 - Standard text, file, link and group records, with unknown node kinds and extension data retained. Preserving an unknown record does not imply an editor for it.
 - Exact no-edit source bytes; stable IDs and node/edge order; unknown JSON fields and numeric lexemes preserved across supported edits. Duplicate keys are rejected before interpretation.
-- Explicit insertion, text/field edits, geometry changes, duplication/remapping, removal, reordering, labels and endpoint reconnection commands. Reconnection currently exists in the model; it is not yet a complete native drag workflow.
+- Explicit insertion, text/field edits, geometry changes, duplication/remapping, removal, reordering, labels and endpoint reconnection commands.
 - Stable named ports in the model, multiple ports per side, strict/loose connection rules, dynamic availability and original-edge reconnect policy. The optional codec preserves legacy/unknown data and supports atomic port removal with edge repair.
 - Immutable prepared changes checked against a private session identity, compensating Undo/Redo and bounded history/work accounting.
 - f64 world/camera geometry with origin subtraction before screen conversion.
 - Native node/edge selection, movement, single-corner resize, marquee, pan/zoom/fit and routed connectors with arrow markers and shared paint/hit geometry.
 - Native body hooks with pointer/keyboard ownership. A retained text-card editor supports exact-base drafts, insertion acknowledgement and native input/IME integration hooks.
 
-The current API does **not yet establish native named-port painting/measurement, direct connection dragging/reconnection, complete custom graph rendering, parent/subflow transforms, viewport controls, touch interaction or graph accessibility**. Source compatibility and actual input acceptance remain explicit gates. Drawing, layout and export primitives also need further work; application media, clipboard I/O and project workflows belong to the host. The [consumer contract](docs/WRITERCRAFT_CONSUMER.md) records that boundary without reducing required features.
+The current API does **not yet establish complete custom graph rendering, parent/subflow transforms, viewport controls, physical touch interaction or graph accessibility**. Source compatibility and actual input acceptance remain explicit gates. Drawing, layout and export primitives also need further work; application media, clipboard I/O and project workflows belong to the host. The [consumer contract](docs/WRITERCRAFT_CONSUMER.md) records that boundary without reducing required features.
 
-The active CC-03 candidate adds opt-in handle dragging, either-end reconnection and exact retained acknowledgement, with a [standalone native showcase](examples/native-showcase/README.md). Its [qualification record](docs/CC03_PROGRESS.md) remains pending; the qualified source pin below stays unchanged until acceptance.
+CC-03 qualifies native named/legacy port measurement and painting, opt-in handle dragging, either-end reconnection, explicit cancellation and exact retained acknowledgement. The [standalone native showcase](examples/native-showcase/README.md) has scoped macOS interaction acceptance, including ordinary movement after text editing and overlay refusal/recovery. See [the independent disposition](docs/CC03_ACCEPTANCE.md) and [full qualification history](docs/CC03_PROGRESS.md). CC-04 now addresses complete object manipulation.
 
 ## Use the qualified source baseline
 
@@ -36,8 +36,8 @@ This pins the existing engine baseline rather than a moving branch. Reproducible
 
 ```toml
 [dependencies]
-craft-canvas-model = { git = "https://github.com/avacadorun-dev/craft-canvas", rev = "99db5166f287831c96da7ba6630a2bb4d620ee4e" }
-craft-canvas-egui = { git = "https://github.com/avacadorun-dev/craft-canvas", rev = "99db5166f287831c96da7ba6630a2bb4d620ee4e" }
+craft-canvas-model = { git = "https://github.com/avacadorun-dev/craft-canvas", rev = "d2bdaeca02ca028693222cf16153ff7c34c7b874" }
+craft-canvas-egui = { git = "https://github.com/avacadorun-dev/craft-canvas", rev = "d2bdaeca02ca028693222cf16153ff7c34c7b874" }
 egui = "=0.36.2"
 ```
 
@@ -112,7 +112,7 @@ Known geometry and encoded snapshots/history have configurable bounds. Current d
 
 ## Qualification and platform status
 
-Qualified source `99db516` passed [hosted run42633082977](https://github.com/avacadorun-dev/craft-canvas/actions/runs/42633082977), including104 workspace tests and the headless named-port example. Hosted qualification checks formatting, locked workspace tests and strict Clippy on **Linux, macOS and Windows**. Those checks establish portable engineering evidence for the tested source. They do not certify OS-level input, graphics, accessibility or every host integration.
+Qualified source `d2bdaec` passed [hosted run42660921454](https://github.com/avacadorun-dev/craft-canvas/actions/runs/42660921454), including144 tests on each platform, the headless named-port example and the native showcase build. Hosted qualification checks formatting, locked workspace tests and strict Clippy on **Linux, macOS and Windows**. Those checks establish portable engineering evidence for the tested source. They do not certify OS-level input, graphics, accessibility or every host integration.
 
 The first native product qualification target is **macOS ARM64**. Full standalone production/native acceptance remains pending, including Windows/Linux native interaction. Existing input and connector evidence retains its precise scope; the current interface is not advertised as complete React Flow behavior. See the [production gates](docs/PRODUCTION_PLAN.md).
 

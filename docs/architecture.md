@@ -2,7 +2,7 @@
 
 ## ADR 008 — direct gestures over shared frame geometry
 
-Selected 2026-11-09 for CC-03; qualification pending. The native adapter derives one bounded frame of named and implicit legacy anchors after host body measurement, then uses that frame for edge routes, visible grips, hits and interaction observations. Paint order keeps canonical edges behind bodies. Camera navigation is applied for the next frame so input never queries a different transform from the one painted.
+Selected 2026-11-09 for CC-03; [scoped qualification accepted](CC03_ACCEPTANCE.md) at d2bdaec on2026-11-10. The native adapter derives one bounded frame of named and implicit legacy anchors after host body measurement, then uses that frame for edge routes, visible grips, hits and interaction observations. Paint order keeps canonical edges behind bodies. Camera navigation is applied for the next frame so input never queries a different transform from the one painted.
 
 An opt-in controller owns one initiating mouse/touch contact through an explicit terminal observation. It emits one guarded transaction and retains pending presentation until the host binds and acknowledges the exact prepared candidate. This remains a presentation state, not another graph or persistence authority. Host body/overlay ownership takes precedence. Coincident endpoint grips are visibly separated with leader lines while retaining exact canonical anchors and bindings.
 

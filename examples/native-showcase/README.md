@@ -2,7 +2,7 @@
 
 This unpublished example hosts the real `CanvasView` in eframe0.36.2/WGPU. Its three cards, legacy omitted-side edge and named ports are synthetic and held in memory. It does not open WriterCraft, load a project, register a document type or use the application's persistent settings. The window/app identity is `dev.craftcanvas.showcase`.
 
-The current source is a CC-03 engineering candidate. Native gestures and production readiness require their own exact-build independent acceptance; adding this executable does not establish either.
+Exact source d2bdaec has [scoped CC-03 independent acceptance](../../docs/CC03_ACCEPTANCE.md), including hosted qualification, injected-native WGPU capture, reviewed historical ordinary observations and current owner-confirmed scenarios. It remains an engineering showcase. Later source changes require their own qualification; this acceptance does not establish production readiness or WriterCraft integration.
 
 ## Interactive use
 
