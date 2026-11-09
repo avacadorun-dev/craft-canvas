@@ -1133,7 +1133,7 @@ fn current_frame_ime_should_override_a_deferred_cancel_without_freezing_native_i
 }
 
 struct AccessibilityChanges;
-impl accesskit_consumer::ChangeHandler for AccessibilityChanges {
+impl accesskit_consumer::TreeChangeHandler for AccessibilityChanges {
     fn node_added(&mut self, _node: &accesskit_consumer::Node<'_>) {}
     fn node_updated(
         &mut self,
