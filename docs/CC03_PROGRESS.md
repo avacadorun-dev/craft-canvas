@@ -29,3 +29,16 @@ Exact hosted lock SHA256: `5a833ea74faaa3b70ecad110472537687a850ff0bb4fd72ac481f
 Source `b09991368de719dcc3ea7a890a830ca38e35dda7`, [run42641033946](https://github.com/avacadorun-dev/craft-canvas/actions/runs/42641033946): committed-lock verification passed. Linux passed all128 workspace tests and the executable headless named-port example. Strict Clippy stopped on two equivalent-form suggestions in port geometry (`collapsible_if`, `nonminimal_bool`). The follow-up combines the same short-circuit conditions and replaces negated `is_some_and` with the equivalent `is_none_or`; tests and behavior are unchanged. Other platform outcomes and exact native acceptance remain pending at this record.
 
 Windows also passed all128 workspace tests and the headless example, then reported the same two Clippy suggestions. The queued macOS job is superseded when the reviewed correction is pushed; it supplies no native evidence.
+
+## Qualified build and first native observations
+
+Source `e68bbdda298dd5a4401912f3ae45b7a61c64c344` passed [run42641928999](https://github.com/avacadorun-dev/craft-canvas/actions/runs/42641928999): committed lock, formatting, all128 workspace tests, headless named-port example, strict Clippy and standalone executable build on Linux/macOS/Windows. The macOS ARM64 bundle was downloaded separately, and its ad-hoc signature plus archive/executable hashes were verified against its hosted manifest.
+
+- Archive SHA256: `5ddfbeb20a3cd114258620abc27ba0c0fbd20f3f0cff558ec7fb425429101b01`.
+- Executable SHA256: `ce7f5d21aeb63e812a3106815c6ba9cdb0b97f9823eea1c6fbddc9796302a589`.
+- Native OS pointer actions created one named connection (revision1, two edges, one Undo step), then held and rejected a second connection while the canonical counts stayed unchanged. These are partial root observations, not independent four-journey acceptance.
+- The first scripted native capture retained a real baseline WGPU image but failed at the rejected-state check, with only4 of27 steps completed. It is failed evidence, not a successful capture. Investigation identified a driver readiness issue: an action target could be published while the header still rendered that action disabled, before the same frame's connection release made it available. Later state transitions in that run are not attributed to an input source without further evidence.
+- Source review confirmed that the synthetic scroll body claimed any held pointer merely on hover, cancelling an incoming board drag. The host correction derives actual scroll-widget ownership and adds targeted regressions; library ownership precedence is retained.
+- The user then explored the open native demo and reported that retained Conflict made the board appear button-only. [CV-02](design/USER_FEEDBACK.md) requires a clear blocked-state explanation and explicit safe recovery. The explored window is left intact; the corrected source requires a new build and native evidence.
+
+Issue3 stays open. Full native acceptance, designer review and consumer adoption are pending.
