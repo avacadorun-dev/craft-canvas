@@ -1,0 +1,25 @@
+# CC-04 object manipulation progress
+
+Updated2026-11-10. Issue [#4](https://github.com/avacadorun-dev/craft-canvas/issues/4) is the sole active library issue. CC-03 was accepted atd2bdaec and closed after the owner confirmed ordinary manipulation and overlay recovery; evidence commit5442038. No app pin or user preview was changed.
+
+Reconciliation reuses the existing lossless model/commands/history, selection/movement/single-corner resize and spatial-group/frame distinctions. Remaining scope includes complete selection/lifecycle, sizing/aspect/rotation, persistent parents, locks/layering and host drop placement. Source inspection found a bounded first defect: merged host ownership/current exclusions gate geometry processing without always ending capture, so a blocked release can leave an active gesture. Existing legacy body capture already cancels; do not duplicate or regress that behavior.
+
+The [OpenSpec change](../openspec/changes/object-manipulation/design.md) defines this first corrective increment and retains the full subsequent issue scope. The first private corrective diff is implemented and awaiting independent source review and hosted qualification; no native acceptance is claimed. Root owns docs, integration and hosted dispatch; the bounded implementation and independent reviewer own only assigned files. Keep the owner's d2bdaec showcase and WriterCraft preview under their control.
+
+The read-only reconciliation report has SHA256 `e841be5a9c3b36caadd86a11c025d4438d8a3da401db39ebac7930dc8dc28f47`. Additional gaps remain explicit: missing independent deletion policies (including incident edges), unconditional native rounding even when fractional model geometry is configured, and an old extreme-camera test that proves culling rather than a visible large-coordinate drag. Address them in their selection/geometry increments with focused regressions; they are not newly executed failures.
+
+## First design accepted for implementation
+
+Independent read-only review approved the private takeover correction before Rust edits. It requires accepted-cycle exclusion checks (including a stationary pointer), merged ownership cancellation and no same-frame rearming; a completed release must not be invalidated by later hover. Selection rollback/public lifecycle, sizing/parents and other policies remain following increments. This is design approval only. The implementation owner is limited to adapter view code and focused native-intent regressions; root retains documents, publication and hosted dispatch.
+
+## Sizing contract retained for the following increment
+
+A separate read-only original-source audit is retained in [CC04_SIZING_SOURCE_CONTRACT.md](CC04_SIZING_SOURCE_CONTRACT.md), SHA256 `218a32ea66c6085cd0604d29bb2ef9da2b55316cfd4edf513e4ecbd4bfdc1c51`. It distinguishes per-kind UI minima from storage limits, display size from original media bytes, shape-local rotation from whole-node transforms, and spatial groups from independent frames. Exact original dependency defaults and inconsistent source lock enforcement remain explicit design questions. This records requirements, not new implemented or native-accepted sizing behavior.
+
+## First corrective diff ready for source review
+
+Only adapter view code and three focused actual-egui regressions changed. Merged ownership terminates active Move/Resize/Marquee; current exclusions follow the accepted primary cycle, with retained last accepted position for stationary overlays. A matching release is insulated from later hover, and cancellation blocks same-frame geometry rearming. Pan, public connection output, schemas, dependencies and existing tests remain unchanged. Direct rustfmt and whitespace checks pass. Rust execution and changed-source native evidence remain pending; this is partial CC-04 work.
+
+Independent source review found one collateral path in the first draft: permitting a valid geometry release despite later excluded hover also opened idle camera/other board actions under that hover. The correction must keep accepted-cycle geometry completion while independently retaining final-pointer exclusions for navigation, activation and keyboard dispatch. Extend the existing post-release regression with excluded wheel/zoom and unchanged camera; do not weaken the completed geometry assertion. This was found before publication or hosted qualification.
+
+The final independent source re-review approved the corrected frozen diff for hosted qualification. Accepted-cycle geometry remains isolated from later hover; final-pointer exclusions independently gate camera, double-click and keyboard actions. The same regression now asserts wheel/zoom and Delete do not escape that boundary, the camera is unchanged, scrolling remains available to its owner, and the completed geometry has exact Undo. Active takeover requests another paint because bodies may already show the preceding preview. No remaining blocking source finding was reported. Exact-source Rust execution and eventual native issue acceptance are still pending.

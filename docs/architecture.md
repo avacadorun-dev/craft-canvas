@@ -1,5 +1,9 @@
 # Architecture decisions
 
+## ADR 009 — reuse manipulation authority in bounded increments
+
+Selected2026-11-10 for CC-04. Preserve the existing exact-base Translate/SetGeometry commands, spatial-group/frame distinction and disposable native previews. Correct explicit host/overlay takeover in the existing ordered primary-cycle input path before extending transform policies. Takeover terminates a transient operation; it cannot leave a paused drag that revives after release. This first correction adds no schema or public API and leaves pan/outside-viewport policy unchanged. Full selection/lifecycle, geometry and nested-parent decisions remain mandatory reviewed increments under [the CC-04 design](../openspec/changes/object-manipulation/design.md).
+
 ## ADR 008 — direct gestures over shared frame geometry
 
 Selected 2026-11-09 for CC-03; [scoped qualification accepted](CC03_ACCEPTANCE.md) at d2bdaec on2026-11-10. The native adapter derives one bounded frame of named and implicit legacy anchors after host body measurement, then uses that frame for edge routes, visible grips, hits and interaction observations. Paint order keeps canonical edges behind bodies. Camera navigation is applied for the next frame so input never queries a different transform from the one painted.

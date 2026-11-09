@@ -301,18 +301,24 @@ struct GeometryPointerFrame {
     position: Option<Pos2>,
     released: bool,
     interrupted: bool,
+    excluded: bool,
 }
 fn geometry_pointer_frame(
     events: &[egui::Event],
     mut active: bool,
+    previous: Option<Pos2>,
     current: Option<Pos2>,
     escape: bool,
+    exclusions: &[Rect],
 ) -> GeometryPointerFrame {
+    let excluded = |point| exclusions.iter().any(|rect| rect.contains(point));
     let mut frame = GeometryPointerFrame {
         press: None,
         position: current,
         released: false,
         interrupted: escape,
+        // An overlay may appear without any new pointer event.
+        excluded: active && previous.is_some_and(excluded),
     };
     if escape {
         return frame;
@@ -333,13 +339,18 @@ fn geometry_pointer_frame(
                     frame.press = Some(*pos);
                     frame.position = Some(*pos);
                     active = true;
+                    frame.excluded |= excluded(*pos);
                 } else if active {
                     frame.position = Some(*pos);
                     frame.released = true;
+                    frame.excluded |= excluded(*pos);
                     break;
                 }
             }
-            egui::Event::PointerMoved(pos) if active => frame.position = Some(*pos),
+            egui::Event::PointerMoved(pos) if active => {
+                frame.position = Some(*pos);
+                frame.excluded |= excluded(*pos);
+            }
             egui::Event::WindowFocused(false) | egui::Event::PointerGone => {
                 frame.interrupted = true;
                 break;
@@ -357,6 +368,7 @@ pub struct CanvasView {
     selection: Selection,
     base: Option<ContentIdentity>,
     gesture: Option<Gesture>,
+    geometry_pointer: Option<Pos2>,
     last_size: Option<[u32; 2]>,
     connection: ConnectionController,
 }
@@ -493,15 +505,18 @@ impl CanvasView {
         }
         self.last_size = Some(dimensions);
         let focused = ui.input(|input| input.focused);
+        let geometry_active = matches!(
+            &self.gesture,
+            Some(Gesture::Move(_) | Gesture::Resize(_) | Gesture::Marquee { .. })
+        );
         let geometry_input = ui.input(|input| {
             geometry_pointer_frame(
                 &input.events,
-                matches!(
-                    &self.gesture,
-                    Some(Gesture::Move(_) | Gesture::Resize(_) | Gesture::Marquee { .. })
-                ),
+                geometry_active,
+                self.geometry_pointer,
                 input.pointer.interact_pos(),
                 input.key_pressed(Key::Escape),
+                &config.input_exclusions,
             )
         });
         if !focused
@@ -708,6 +723,7 @@ impl CanvasView {
                     || input.pointer.primary_pressed()
                     || input.pointer.primary_released())
         });
+        let pan = ui.input(|input| input.pointer.button_down(PointerButton::Middle) || pan_chord);
         let connection_step = self.connection.step(ConnectionInput {
             session,
             dialect,
@@ -773,8 +789,18 @@ impl CanvasView {
         } else {
             Vec::new()
         };
-        if connection_blocking || geometry_input.interrupted {
+        let geometry_cycle = geometry_active
+            || (!pan
+                && !matches!(self.gesture, Some(Gesture::Pan))
+                && geometry_input.press.is_some());
+        let geometry_cancelled =
+            (geometry_active && ownership.any()) || (geometry_cycle && geometry_input.excluded);
+        if connection_blocking || geometry_input.interrupted || geometry_cancelled {
             self.gesture = None;
+            if geometry_active && geometry_cancelled {
+                // Bodies may already have painted the previous preview before ownership resolved.
+                ui.ctx().request_repaint();
+            }
         } else if let Some(id) = focused_node {
             self.selection = Selection {
                 nodes: BTreeSet::from([id]),
@@ -784,29 +810,39 @@ impl CanvasView {
         if pointer_captured || keyboard_captured {
             self.gesture = None;
         }
+        let pointer = ui.input(|input| input.pointer.interact_pos());
+        let final_pointer_excluded = pointer.is_some_and(|point| {
+            config
+                .input_exclusions
+                .iter()
+                .any(|rect| rect.contains(point))
+        });
         if ui.is_enabled()
             && config.interactive
             && focused
             && !geometry_input.interrupted
+            && !geometry_cancelled
             && !config.shortcuts_blocked
             && !pointer_captured
             && !keyboard_captured
             && !ownership.any()
             && !connection_blocking
-            && !ui.input(|input| {
-                input.pointer.interact_pos().is_some_and(|point| {
-                    config
-                        .input_exclusions
-                        .iter()
-                        .any(|rect| rect.contains(point))
-                })
+            && !(if geometry_cycle {
+                geometry_input.position
+            } else {
+                ui.input(|input| input.pointer.interact_pos())
+            })
+            .is_some_and(|point| {
+                config
+                    .input_exclusions
+                    .iter()
+                    .any(|rect| rect.contains(point))
             })
         {
-            let pointer = ui.input(|input| input.pointer.interact_pos());
             let delta = ui.input(|input| input.pointer.delta());
             let inside =
                 pointer.is_some_and(|p| viewport.contains(p)) && ui.rect_contains_pointer(viewport);
-            if inside && self.gesture.is_none() {
+            if inside && !final_pointer_excluded && self.gesture.is_none() {
                 let (zoom, scroll) =
                     ui.input(|input| (input.zoom_delta(), input.smooth_scroll_delta));
                 if let Some(pointer) = pointer {
@@ -825,8 +861,6 @@ impl CanvasView {
                 ui.input_mut(|input| input.smooth_scroll_delta = Vec2::ZERO);
             }
             let released = geometry_input.released;
-            let pan =
-                ui.input(|input| input.pointer.button_down(PointerButton::Middle) || pan_chord);
             if inside && pan && self.gesture.is_none() {
                 self.gesture = Some(Gesture::Pan);
             }
@@ -1006,6 +1040,7 @@ impl CanvasView {
                 }
             }
             if !pan
+                && !final_pointer_excluded
                 && let Some(id) = double_clicked
                 && let Some(node) = session.document().node(&id)
             {
@@ -1023,6 +1058,7 @@ impl CanvasView {
             }
             if response.double_clicked()
                 && !pan
+                && !final_pointer_excluded
                 && let Some(pointer) = pointer
             {
                 let world = self.camera.view_to_world(
@@ -1038,7 +1074,8 @@ impl CanvasView {
                     });
                 }
             }
-            if !keyboard_captured && (response.has_focus() || node_focus) {
+            if !keyboard_captured && !final_pointer_excluded && (response.has_focus() || node_focus)
+            {
                 self.keyboard(ui, session, dialect, response.id, config.id, &mut intents);
             }
         }
@@ -1046,6 +1083,14 @@ impl CanvasView {
             self.camera = navigation_camera;
             ui.ctx().request_repaint();
         }
+        self.geometry_pointer = if matches!(
+            &self.gesture,
+            Some(Gesture::Move(_) | Gesture::Resize(_) | Gesture::Marquee { .. })
+        ) {
+            geometry_input.position
+        } else {
+            None
+        };
         CanvasViewOutput {
             response,
             intents,

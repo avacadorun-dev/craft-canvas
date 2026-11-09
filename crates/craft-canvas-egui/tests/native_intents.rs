@@ -250,3 +250,299 @@ fn local_geometry_at_large_world_coordinates_uses_the_same_native_card_bounds() 
     }
     Ok(())
 }
+
+#[derive(Default)]
+struct TakeoverInput {
+    host: CanvasInputOwnership,
+    config: CanvasInputOwnership,
+    exclusions: Vec<Rect>,
+}
+impl CanvasViewHost for TakeoverInput {
+    fn input_ownership(&self) -> CanvasInputOwnership {
+        self.host
+    }
+    fn paint_body(
+        &mut self,
+        _ui: &mut egui::Ui,
+        _node: &NodeRecord,
+        _rect: Rect,
+        _zoom: f64,
+    ) -> NodeBodyResponse {
+        NodeBodyResponse::default()
+    }
+}
+fn takeover_frame(
+    ctx: &egui::Context,
+    view: &mut CanvasView,
+    session: &CanvasSession,
+    host: &mut TakeoverInput,
+    events: Vec<Event>,
+) -> Result<CanvasViewOutput> {
+    let mut output = None;
+    let input = RawInput {
+        screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1000., 680.))),
+        // Separate independent recovery clicks from egui's double-click interval.
+        time: Some(ctx.input(|input| input.time) + 1.0),
+        focused: true,
+        events,
+        ..RawInput::default()
+    };
+    let mut frame = ctx.run_ui(input, |root| {
+        egui::CentralPanel::default().show(root, |ui| {
+            let mut config = CanvasViewConfig::new(Id::new("takeover-board"), ui);
+            config.input_ownership = host.config;
+            config.input_exclusions.clone_from(&host.exclusions);
+            output = Some(view.show(ui, session, &StandardDialect, host, &config));
+        });
+    });
+    frame.textures_delta.clear();
+    frame.platform_output.commands.clear();
+    output.ok_or_else(|| CanvasError::Invalid("missing takeover output".into()))
+}
+
+#[test]
+fn merged_host_ownership_terminates_geometry_instead_of_pausing_it() -> TestResult {
+    let none = CanvasInputOwnership::default();
+    // Exercise each merged ownership channel across the three geometry captures.
+    for (kind, host_owner, config_owner) in [
+        (
+            "move",
+            CanvasInputOwnership {
+                pointer: true,
+                ..none
+            },
+            none,
+        ),
+        ("resize", none, CanvasInputOwnership { ime: true, ..none }),
+        (
+            "marquee",
+            CanvasInputOwnership {
+                scroll: true,
+                ..none
+            },
+            none,
+        ),
+        (
+            "move",
+            none,
+            CanvasInputOwnership {
+                touch: true,
+                ..none
+            },
+        ),
+        (
+            "resize",
+            CanvasInputOwnership {
+                keyboard: true,
+                ..none
+            },
+            none,
+        ),
+    ] {
+        let session = session()?;
+        let original = session.document().raw_json().to_owned();
+        let ctx = egui::Context::default();
+        let mut view = CanvasView::default();
+        let mut host = TakeoverInput::default();
+        let initial = takeover_frame(&ctx, &mut view, &session, &mut host, vec![])?;
+        let rect = initial.nodes[0].reserved;
+        let start = match kind {
+            "resize" => rect.right_bottom() - Vec2::splat(4.),
+            "marquee" => rect.left_top() - Vec2::splat(24.),
+            _ => rect.center(),
+        };
+        takeover_frame(&ctx, &mut view, &session, &mut host, press(start))?;
+        assert!(view.has_gesture(), "{kind} starts");
+        let moved = start + Vec2::new(24., 12.);
+        takeover_frame(
+            &ctx,
+            &mut view,
+            &session,
+            &mut host,
+            vec![Event::PointerMoved(moved)],
+        )?;
+        host.host = host_owner;
+        host.config = config_owner;
+        let blocked = takeover_frame(&ctx, &mut view, &session, &mut host, vec![])?;
+        assert!(blocked.intents.is_empty());
+        assert!(!view.has_gesture(), "{kind} ends on merged ownership");
+        host.host = none;
+        host.config = none;
+        let released = takeover_frame(&ctx, &mut view, &session, &mut host, release(moved))?;
+        assert!(released.intents.is_empty());
+        assert!(!view.has_gesture());
+        assert_eq!(session.document().raw_json(), original);
+        assert_eq!(session.history_usage().undo_steps, 0);
+        assert_eq!(session.history_usage().redo_steps, 0);
+    }
+    Ok(())
+}
+
+#[test]
+fn exclusions_end_move_resize_and_marquee_without_reviving_a_blocked_release() -> TestResult {
+    for kind in ["move", "resize", "marquee"] {
+        let mut session = session()?;
+        let original = session.document().raw_json().to_owned();
+        let ctx = egui::Context::default();
+        let mut view = CanvasView::default();
+        let mut host = TakeoverInput::default();
+        let initial = takeover_frame(&ctx, &mut view, &session, &mut host, vec![])?;
+        let rect = initial.nodes[0].reserved;
+        let start = match kind {
+            "resize" => rect.right_bottom() - Vec2::splat(4.),
+            "marquee" => rect.left_top() - Vec2::splat(24.),
+            _ => rect.center(),
+        };
+        takeover_frame(&ctx, &mut view, &session, &mut host, press(start))?;
+        let moved = start + Vec2::new(24., 12.);
+        takeover_frame(
+            &ctx,
+            &mut view,
+            &session,
+            &mut host,
+            vec![Event::PointerMoved(moved)],
+        )?;
+        assert!(view.has_gesture());
+        host.exclusions = vec![Rect::from_center_size(moved, Vec2::splat(8.))];
+        let events = match kind {
+            // The current accepted position is now covered, without pointer movement.
+            "resize" => vec![],
+            // Crossing before release cancels even when the release and a later cycle are clear.
+            "marquee" => {
+                host.exclusions = vec![Rect::from_center_size(
+                    moved + Vec2::splat(16.),
+                    Vec2::splat(8.),
+                )];
+                let mut events = vec![Event::PointerMoved(moved + Vec2::splat(16.))];
+                events.extend(release(moved + Vec2::splat(40.)));
+                events.extend(press(rect.center()));
+                events.extend(release(rect.center() + Vec2::splat(12.)));
+                events
+            }
+            _ => release(moved),
+        };
+        let blocked = takeover_frame(&ctx, &mut view, &session, &mut host, events)?;
+        assert!(blocked.intents.is_empty());
+        assert!(!view.has_gesture(), "{kind} must not remain captured");
+        host.exclusions.clear();
+        let after = takeover_frame(
+            &ctx,
+            &mut view,
+            &session,
+            &mut host,
+            release(moved + Vec2::splat(48.)),
+        )?;
+        assert!(after.intents.is_empty());
+        let hover = takeover_frame(
+            &ctx,
+            &mut view,
+            &session,
+            &mut host,
+            vec![Event::PointerMoved(rect.center())],
+        )?;
+        assert!(hover.intents.is_empty());
+        assert!(!view.has_gesture());
+        assert_eq!(session.document().raw_json(), original);
+        assert_eq!(session.history_usage().undo_steps, 0);
+        assert_eq!(session.history_usage().redo_steps, 0);
+
+        takeover_frame(&ctx, &mut view, &session, &mut host, press(rect.center()))?;
+        let clean = takeover_frame(
+            &ctx,
+            &mut view,
+            &session,
+            &mut host,
+            release(rect.center() + Vec2::new(12., 6.)),
+        )?;
+        assert_eq!(clean.intents.len(), 1);
+        let transaction = clean
+            .intents
+            .into_iter()
+            .find_map(|intent| match intent {
+                CanvasIntent::Transaction(transaction) => Some(transaction),
+                _ => None,
+            })
+            .ok_or("clean recovery transaction")?;
+        let prepared = session.prepare(transaction, &StandardDialect)?;
+        session.apply(prepared)?;
+        assert_eq!(session.document().node("a").ok_or("a")?.bounds().x, 12.);
+        assert_eq!(session.history_usage().undo_steps, 1);
+        let undo = session.prepare_undo()?;
+        session.apply(undo)?;
+        assert_eq!(session.document().raw_json(), original);
+    }
+    Ok(())
+}
+
+#[test]
+fn excluded_hover_after_matching_release_does_not_cancel_completed_geometry() -> TestResult {
+    for resize in [false, true] {
+        let mut session = session()?;
+        let original = session.document().raw_json().to_owned();
+        let ctx = egui::Context::default();
+        let mut view = CanvasView::default();
+        let mut host = TakeoverInput::default();
+        let initial = takeover_frame(&ctx, &mut view, &session, &mut host, vec![])?;
+        let rect = initial.nodes[0].reserved;
+        let start = if resize {
+            rect.right_bottom() - Vec2::splat(4.)
+        } else {
+            rect.center()
+        };
+        let end = start + Vec2::new(24., 12.);
+        let later = end + Vec2::splat(80.);
+        host.exclusions = vec![Rect::from_center_size(later, Vec2::splat(8.))];
+        let mut events = press(start);
+        events.extend(release(end));
+        events.push(Event::PointerMoved(later));
+        events.push(if resize {
+            Event::Zoom(1.5)
+        } else {
+            Event::MouseWheel {
+                unit: egui::MouseWheelUnit::Point,
+                delta: Vec2::new(0., -24.),
+                phase: egui::TouchPhase::Move,
+                modifiers: Modifiers::NONE,
+            }
+        });
+        events.push(Event::Key {
+            key: egui::Key::Delete,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: Modifiers::NONE,
+        });
+        let camera = view.camera();
+        let completed = takeover_frame(&ctx, &mut view, &session, &mut host, events)?;
+        assert!(!view.has_gesture());
+        assert_eq!(completed.intents.len(), 1);
+        assert_eq!(view.camera(), camera);
+        if !resize {
+            assert_ne!(ctx.input(|input| input.smooth_scroll_delta), Vec2::ZERO);
+        }
+        let transaction = completed
+            .intents
+            .into_iter()
+            .find_map(|intent| match intent {
+                CanvasIntent::Transaction(transaction) => Some(transaction),
+                _ => None,
+            })
+            .ok_or("completed geometry transaction")?;
+        let prepared = session.prepare(transaction, &StandardDialect)?;
+        session.apply(prepared)?;
+        let bounds = session.document().node("a").ok_or("a")?.bounds();
+        assert_eq!(
+            (bounds.x, bounds.y, bounds.width, bounds.height),
+            if resize {
+                (0., 0., 224., 132.)
+            } else {
+                (24., 12., 200., 120.)
+            }
+        );
+        assert_eq!(session.history_usage().undo_steps, 1);
+        let undo = session.prepare_undo()?;
+        session.apply(undo)?;
+        assert_eq!(session.document().raw_json(), original);
+    }
+    Ok(())
+}
