@@ -42,3 +42,9 @@ Source `e68bbdda298dd5a4401912f3ae45b7a61c64c344` passed [run42641928999](https:
 - The user then explored the open native demo and reported that retained Conflict made the board appear button-only. [CV-02](design/USER_FEEDBACK.md) requires a clear blocked-state explanation and explicit safe recovery. The explored window is left intact; the corrected source requires a new build and native evidence.
 
 Issue3 stays open. Full native acceptance, designer review and consumer adoption are pending.
+
+## Rejected-demo corrections ready for hosted qualification
+
+The follow-up keeps the engine's guarded ownership/acknowledgement contract and fixes the synthetic host: actual scroll responses own pointer input; normal mode applies immediately with direct-manipulation help and Undo/Redo; testing controls are collapsed; a pending/conflict explanation and explicit Discard pending remain reachable. Discard cancels/rejects the host-owned held candidate before clearing presentation and changes no canonical data/history.
+
+Capture uses only enabled/unclipped header targets, a distinct Verification title and a bounded redacted upstream/scripted input trace. All27 journey steps and checks remain intact. Six focused host/header/privacy regressions were added. Independent source re-review found no blockers; exact hosted execution and fresh native acceptance remain pending.

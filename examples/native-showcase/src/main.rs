@@ -1,5 +1,7 @@
 //! Isolated synthetic native host for CraftCanvas interaction qualification.
 mod capture;
+#[cfg(test)]
+mod tests;
 
 use craft_canvas_egui::{
     CanvasInputOwnership, CanvasIntent, CanvasView, CanvasViewConfig, CanvasViewHost,
@@ -36,6 +38,8 @@ struct Host {
     text_input_id: Option<Id>,
     ime_active: bool,
     ime_for_frame: bool,
+    #[cfg(test)]
+    scene_scroll_id: Option<Id>,
 }
 impl Default for Host {
     fn default() -> Self {
@@ -50,6 +54,8 @@ impl Default for Host {
             text_input_id: None,
             ime_active: false,
             ime_for_frame: false,
+            #[cfg(test)]
+            scene_scroll_id: None,
         }
     }
 }
@@ -124,7 +130,7 @@ impl CanvasViewHost for Host {
             child.small("Two source ports on the right: main / alternative.");
         } else if node.id() == "b" {
             let hovered = child.rect_contains_pointer(rect);
-            egui::ScrollArea::vertical()
+            let scroll = egui::ScrollArea::vertical()
                 .id_salt("body-scroll")
                 .max_height(150.0)
                 .show(&mut child, |ui| {
@@ -132,8 +138,22 @@ impl CanvasViewHost for Host {
                         ui.label(format!("Synthetic scene beat {line}"));
                     }
                 });
-            pointer = hovered
-                && child.input(|input| input.pointer.any_down() || input.pointer.any_released());
+            // egui 0.36.2 exposes the ScrollArea ID, but not its child Responses.
+            // Its "area" drag surface and vertical bar (usize axis 1) own input;
+            // merely crossing this body during an outside drag does not.
+            pointer = [scroll.id.with("area"), scroll.id.with(1_usize)]
+                .into_iter()
+                .filter_map(|id| child.ctx().read_response(id))
+                .any(|response| {
+                    response.is_pointer_button_down_on()
+                        || response.dragged()
+                        || response.drag_stopped()
+                        || response.clicked()
+                });
+            #[cfg(test)]
+            {
+                self.scene_scroll_id = Some(scroll.id);
+            }
             self.ownership.scroll |= hovered
                 && child.input(|input| {
                     input
@@ -182,6 +202,7 @@ enum Action {
     Reject,
     Retry,
     Dismiss,
+    Discard,
     Undo,
     Redo,
     External,
@@ -289,6 +310,16 @@ impl Showcase {
                 self.message = "Rejected request dismissed without changing canonical data.".into();
                 Ok(())
             }
+            Action::Discard => {
+                // This showcase owns an in-memory held candidate, so cancelling
+                // it requires no asynchronous storage acknowledgement.
+                self.view
+                    .reject_connection("Synthetic host cancelled its pending write.")?;
+                self.prepared = None;
+                self.view.dismiss_connection()?;
+                self.message = "Pending connection discarded; canonical data is unchanged.".into();
+                Ok(())
+            }
             Action::Undo => self.session.apply(self.session.prepare_undo()?).map(|_| ()),
             Action::Redo => self.session.apply(self.session.prepare_redo()?).map(|_| ()),
             Action::External => {
@@ -321,40 +352,15 @@ impl Showcase {
     }
     fn header(&mut self, ui: &mut Ui, targets: &mut BTreeMap<String, Pos2>) {
         ui.heading("CraftCanvas Showcase");
-        ui.small(format!(
-            "Source {} · drag a port; select an edge to reconnect either end",
-            self.source_sha
-        ));
-        let mut actions = vec![];
-        ui.horizontal(|ui| {
-            ui.selectable_value(
-                &mut self.acknowledgement,
-                Acknowledgement::Immediate,
-                "Immediate acknowledgement",
-            );
-            ui.selectable_value(
-                &mut self.acknowledgement,
-                Acknowledgement::Hold,
-                "Hold for host",
-            );
-            ui.checkbox(&mut self.overlay, "Overlay exclusion");
-        });
+        ui.label("Drag a card header to move it. Drag between ports to connect. Select an edge to reconnect; press Delete to remove a selection.");
         let pending = self.view.connection_pending();
         let rejected = matches!(
             self.view.connection_status(),
             Some(ConnectionSubmissionState::Rejected(_))
         );
+        let mut actions = vec![];
         ui.horizontal(|ui| {
             for (key, label, enabled, action) in [
-                (
-                    "apply",
-                    "Apply held",
-                    self.prepared.is_some(),
-                    Action::Apply,
-                ),
-                ("reject", "Reject", pending && !rejected, Action::Reject),
-                ("retry", "Retry", rejected, Action::Retry),
-                ("dismiss", "Dismiss", rejected, Action::Dismiss),
                 (
                     "undo",
                     "Undo",
@@ -367,38 +373,80 @@ impl Showcase {
                     !pending && self.session.history_usage().redo_steps > 0,
                     Action::Redo,
                 ),
-                ("external", "External revision", pending, Action::External),
             ] {
-                let response = ui.add_enabled(enabled, egui::Button::new(label));
-                targets.insert(format!("button:{key}"), response.rect.center());
-                if response.clicked() {
+                if Self::header_button(ui, targets, key, label, enabled) {
                     actions.push(action);
                 }
             }
+            if pending && Self::header_button(ui, targets, "discard", "Discard pending", true) {
+                actions.push(Action::Discard);
+            }
         });
+        let testing = egui::CollapsingHeader::new("Testing controls")
+            .id_salt("host-testing")
+            .default_open(self.capture.is_some())
+            .show(ui, |ui| {
+                ui.small("Failure injection and host acknowledgements; ordinary editing applies immediately.");
+                ui.horizontal(|ui| {
+                    ui.selectable_value(&mut self.acknowledgement, Acknowledgement::Immediate, "Immediate acknowledgement");
+                    ui.selectable_value(&mut self.acknowledgement, Acknowledgement::Hold, "Hold for host");
+                    ui.checkbox(&mut self.overlay, "Overlay exclusion");
+                });
+                ui.horizontal(|ui| {
+                    for (key, label, enabled, action) in [
+                        ("apply", "Apply held", self.prepared.is_some(), Action::Apply),
+                        ("reject", "Reject", pending && !rejected, Action::Reject),
+                        ("retry", "Retry", rejected, Action::Retry),
+                        ("dismiss", "Dismiss", rejected, Action::Dismiss),
+                        ("external", "External revision", pending, Action::External),
+                    ] {
+                        if Self::header_button(ui, targets, key, label, enabled) {
+                            actions.push(action);
+                        }
+                    }
+                });
+                ui.small(format!("Source {} · revision {} · edges {} · connection {:?}",
+                    self.source_sha, self.session.identity().revision(),
+                    self.session.document().edges().len(), self.view.connection_status()));
+            });
+        targets.insert(
+            "button:testing".into(),
+            testing.header_response.rect.center(),
+        );
         for action in actions {
             let result = self.action(action);
             self.record_result(result);
         }
-        ui.label(&self.message);
-        ui.small(format!(
-            "Revision {} · edges {} · Undo {} · connection {:?}",
-            self.session.identity().revision(),
-            self.session.document().edges().len(),
-            self.session.history_usage().undo_steps,
-            self.view.connection_status()
-        ));
-    }
-}
-
-impl eframe::App for Showcase {
-    fn raw_input_hook(&mut self, ctx: &egui::Context, input: &mut egui::RawInput) {
-        self.host.prepare_input(ctx, input);
-        if let Some(capture) = &mut self.capture {
-            capture.inject(input, self.observation.as_ref());
+        if let Some(state) = self.view.connection_status() {
+            ui.label(match state {
+                ConnectionSubmissionState::Awaiting => "Board editing is paused while the host holds a connection. Discard pending, or use Apply held in Testing controls.",
+                ConnectionSubmissionState::Rejected(_) => "Board editing is paused after a host refusal. Discard pending, or use Retry / Dismiss in Testing controls.",
+                ConnectionSubmissionState::Conflict => "Board editing is paused: the document changed during a pending connection. Discard pending to continue.",
+            });
         }
+        ui.small(&self.message);
     }
-    fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
+    fn header_button(
+        ui: &mut Ui,
+        targets: &mut BTreeMap<String, Pos2>,
+        key: &str,
+        label: &str,
+        enabled: bool,
+    ) -> bool {
+        let response = ui.add_enabled(enabled, egui::Button::new(label));
+        // egui hits the previous pass's interactive widgets. Submission can
+        // enable an action after this header was painted; wait until a later
+        // header actually renders its enabled, unclipped target.
+        let point = response.rect.center();
+        if response.enabled()
+            && response.interact_rect.contains(point)
+            && ui.clip_rect().contains(point)
+        {
+            targets.insert(format!("button:{key}"), point);
+        }
+        response.clicked()
+    }
+    fn show(&mut self, ui: &mut Ui) {
         self.frame = self.frame.saturating_add(1);
         let ctx = ui.ctx().clone();
         let mut targets = BTreeMap::new();
@@ -481,12 +529,24 @@ impl eframe::App for Showcase {
                 "{}",
                 json!({
                     "kind":"observed-host-state","source_sha":self.source_sha,
-                    "input_provenance":if self.capture.is_some() {"scripted RawInput"} else {"native window events; no in-app injection"},
+                    "input_provenance":if self.capture.is_some() {"scripted RawInput plus unmodified upstream input; see capture input trace"} else {"native window events; no in-app injection"},
                     "observed_state":observation.state,
                 })
             );
             self.last_reported = Some(observed_key);
         }
+    }
+}
+
+impl eframe::App for Showcase {
+    fn raw_input_hook(&mut self, ctx: &egui::Context, input: &mut egui::RawInput) {
+        self.host.prepare_input(ctx, input);
+        if let Some(capture) = &mut self.capture {
+            capture.inject(input, self.observation.as_ref());
+        }
+    }
+    fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
+        self.show(ui);
     }
 }
 
@@ -520,9 +580,14 @@ fn main() -> AppResult<()> {
     if source_sha.len() > 64 || scenario != "connections" {
         return Err("Unsupported source identity or capture scenario".into());
     }
+    let purpose = if capture_dir.is_some() {
+        " Verification"
+    } else {
+        ""
+    };
     let app = Showcase::new(source_sha.clone(), capture_dir)?;
     let title = format!(
-        "CraftCanvas Showcase {}",
+        "CraftCanvas Showcase{purpose} {}",
         source_sha.chars().take(12).collect::<String>()
     );
     let options = eframe::NativeOptions {

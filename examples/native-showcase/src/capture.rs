@@ -18,6 +18,7 @@ use std::{
 type CaptureResult<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 const DEADLINE: Duration = Duration::from_secs(45);
 const RETRY: Duration = Duration::from_millis(600);
+const INPUT_TRACE_LIMIT: usize = 512;
 
 #[derive(Clone, Copy, Default)]
 pub(crate) struct Counters {
@@ -254,6 +255,8 @@ pub(crate) struct Capture {
     readback: Option<Readback>,
     observations: Vec<Value>,
     captures: Vec<Value>,
+    input_trace: Vec<Value>,
+    input_trace_dropped: usize,
     done: bool,
 }
 impl Capture {
@@ -278,10 +281,21 @@ impl Capture {
             readback: None,
             observations: vec![],
             captures: vec![],
+            input_trace: vec![],
+            input_trace_dropped: 0,
             done: false,
         })
     }
     pub fn inject(&mut self, input: &mut RawInput, observation: Option<&Observation>) {
+        // Record the unmodified integration batch separately from our additions.
+        // This identifies upstream input, not whether a physical device caused it.
+        let after_frame = observation.map_or(0, |observation| observation.frame);
+        self.trace_input(
+            "upstream RawInput",
+            after_frame,
+            input.focused,
+            &input.events,
+        );
         let Some(observation) = observation else {
             return;
         };
@@ -334,6 +348,12 @@ impl Capture {
             }
             _ => return,
         };
+        self.trace_input(
+            "scripted RawInput",
+            observation.frame,
+            input.focused,
+            &events,
+        );
         input.events.extend(events);
         self.last_injected = observation.frame;
         self.phase += 1;
@@ -345,6 +365,19 @@ impl Capture {
         };
         if complete {
             self.advance();
+        }
+    }
+    fn trace_input(&mut self, provenance: &str, after_frame: u64, focused: bool, events: &[Event]) {
+        for event in events {
+            if self.input_trace.len() == INPUT_TRACE_LIMIT {
+                self.input_trace_dropped = self.input_trace_dropped.saturating_add(1);
+                continue;
+            }
+            let entry = json!({"kind":"capture-input","provenance":provenance,
+                "after_frame":after_frame,"step":self.at,"phase":self.phase,"focused":focused,
+                "event":input_event_json(event)});
+            println!("{entry}");
+            self.input_trace.push(entry);
         }
     }
     fn advance(&mut self) {
@@ -540,6 +573,7 @@ impl Capture {
             "evidence_kind":"scripted RawInput through compiled native widgets with WGPU readback",
             "os_input_acceptance":false,"physical_touchscreen_acceptance":false,"production_acceptance":false,
             "initial_canonical_json":self.initial,"elapsed_seconds":self.started.elapsed().as_secs_f64(),
+            "input_trace":self.input_trace,"input_trace_dropped":self.input_trace_dropped,
             "completed_steps":self.at,"total_steps":self.steps.len(),"captures":self.captures,"checks":self.observations,"final":observation.state});
         let result = (|| -> CaptureResult<()> {
             let mut file = OpenOptions::new()
@@ -557,6 +591,63 @@ impl Capture {
         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
     }
 }
+
+// Never format a whole Event: text, paste, IME and accessibility payloads may
+// contain private input. Character keys are also redacted, even without Text.
+pub(crate) fn input_event_json(event: &Event) -> Value {
+    match event {
+        Event::PointerMoved(pos) => json!({"kind":"pointer-moved","position":[pos.x,pos.y]}),
+        Event::PointerButton {
+            pos,
+            button,
+            pressed,
+            ..
+        } => json!({"kind":"pointer-button",
+            "position":[pos.x,pos.y],"button":format!("{button:?}"),"pressed":pressed}),
+        Event::Key {
+            key,
+            pressed,
+            repeat,
+            ..
+        } => {
+            let control = match key {
+                Key::Escape
+                | Key::Tab
+                | Key::Enter
+                | Key::Backspace
+                | Key::Delete
+                | Key::ArrowDown
+                | Key::ArrowLeft
+                | Key::ArrowRight
+                | Key::ArrowUp
+                | Key::Home
+                | Key::End
+                | Key::PageUp
+                | Key::PageDown => format!("{key:?}"),
+                _ => "redacted".into(),
+            };
+            json!({"kind":"key","control":control,"pressed":pressed,"repeat":repeat})
+        }
+        Event::WindowFocused(focused) => json!({"kind":"window-focus","focused":focused}),
+        Event::Touch { phase, pos, .. } => {
+            json!({"kind":"touch","phase":format!("{phase:?}"),"position":[pos.x,pos.y]})
+        }
+        Event::PointerGone => json!({"kind":"pointer-gone"}),
+        Event::Text(_) => json!({"kind":"text-redacted"}),
+        Event::Paste(_) => json!({"kind":"paste-redacted"}),
+        Event::Ime(_) => json!({"kind":"ime-redacted"}),
+        Event::AccessKitActionRequest(_) => json!({"kind":"accessibility-redacted"}),
+        Event::Screenshot { .. } => json!({"kind":"screenshot-readback"}),
+        Event::Copy => json!({"kind":"copy"}),
+        Event::Cut => json!({"kind":"cut"}),
+        Event::ModifiersChanged(_) => json!({"kind":"modifiers-changed"}),
+        Event::MouseMoved(_) => json!({"kind":"mouse-moved"}),
+        Event::MouseWheel { .. } => json!({"kind":"mouse-wheel"}),
+        Event::Zoom(_) => json!({"kind":"zoom"}),
+        Event::Rotate(_) => json!({"kind":"rotate"}),
+    }
+}
+
 fn pointer(point: Pos2, pressed: bool) -> Vec<Event> {
     vec![
         Event::PointerMoved(point),

@@ -7,3 +7,9 @@ Initial findings were corrected: a named port at the legacy midpoint must not tu
 The final source review reported **no known blocking source findings** and readiness for hosted qualification. Exact prepared-receipt/session/revision guards, target-start normalization, ordered release handling, bounded retained data and isolated artifact/source provenance were also inspected. Direct formatting, whitespace and Python syntax checks passed.
 
 This is **source qualification only**. Rust compilation/tests, exact hosted build identity, actual compiled captures and independent four-journey interaction acceptance are pending. The issue remains open. A subsequent acceptance entry must identify the exact committed candidate and hash the reviewed evidence; this report does not claim physical touchscreen, downstream WriterCraft or production acceptance.
+
+## Rework after the rejected native demo
+
+The independent reviewer inspected the follow-up showcase source after CV-02/CV-03: actual scroll-widget ownership including release, collapsed failure-injection controls with immediate ordinary editing, visible blocked-state explanation and explicit host-reject/cancel before pending dismissal. The capture driver now publishes only enabled/unclipped action targets and retains the same27-step acceptance sequence. Upstream/scripted input tracing is bounded and redacts private payloads.
+
+Six focused regressions exercise the actual host/header and trace redaction. Read-only review reported no blocking source findings and readiness for a new hosted candidate; formatting/whitespace checks passed. This does not convert the rejected native demo or failed capture into accepted evidence. The corrected exact build must pass hosted checks and a fresh independent native journey.
