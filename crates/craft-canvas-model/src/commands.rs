@@ -246,7 +246,9 @@ impl<'a> WorkControl<'a> {
     pub fn remaining(&self) -> usize {
         self.remaining
     }
-    pub(crate) fn charge(&mut self, units: usize) -> Result<()> {
+    /// Consume shared work units, refusing cancellation or budget exhaustion.
+    /// Native adapters can charge their own traversal against the same bounded operation.
+    pub fn charge(&mut self, units: usize) -> Result<()> {
         if self
             .cancelled
             .is_some_and(|flag| flag.load(Ordering::Acquire))
