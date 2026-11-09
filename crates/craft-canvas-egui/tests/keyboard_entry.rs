@@ -360,6 +360,26 @@ fn enter_should_remain_unconsumed_when_selection_or_input_ownership_is_ineligibl
             "multiple" => view.set_selection(selection(&["a", "c"], &[])),
             "edge" => view.set_selection(selection(&["a"], &["edge"])),
             "captured" => host.capture = true,
+            "repeat" => {
+                // egui derives repeat from keys_down, not the raw event's flag.
+                // Hold Enter while the host blocks shortcuts, then unblock it.
+                let down = enter(Modifiers::NONE, false);
+                let held = frame(
+                    &ctx,
+                    &mut view,
+                    &session,
+                    &dialect,
+                    &mut host,
+                    vec![down.clone()],
+                    FrameOptions {
+                        blocked: true,
+                        ..Default::default()
+                    },
+                )?;
+                assert!(held.board.intents.is_empty());
+                assert!(held.remaining.contains(&down));
+                assert!(ctx.input(|input| input.key_down(Key::Enter)));
+            }
             "competing-field" => {
                 host.competing_field = true;
                 // The node snapshot precedes paint_body transferring focus.
@@ -429,6 +449,25 @@ fn enter_should_remain_unconsumed_when_selection_or_input_ownership_is_ineligibl
         )?;
         assert!(output.board.intents.is_empty(), "{case}");
         assert!(output.remaining.contains(&event), "{case}");
+        if case == "repeat" {
+            let released = frame(
+                &ctx,
+                &mut view,
+                &session,
+                &dialect,
+                &mut host,
+                vec![Event::Key {
+                    key: Key::Enter,
+                    physical_key: None,
+                    pressed: false,
+                    repeat: false,
+                    modifiers: Modifiers::NONE,
+                }],
+                FrameOptions::default(),
+            )?;
+            assert!(released.board.intents.is_empty());
+            assert!(!ctx.input(|input| input.key_down(Key::Enter)));
+        }
         if case == "competing-field" {
             assert_eq!(
                 ctx.memory(|memory| memory.focused()),
