@@ -80,7 +80,7 @@ def validate(directory: Path, source_sha: str) -> dict:
     for flag in ("os_input_acceptance", "physical_touchscreen_acceptance", "production_acceptance"):
         if evidence.get(flag) is not False:
             raise ValueError("Scripted evidence cannot claim " + flag)
-    if evidence.get("completed_steps") != 27 or evidence.get("total_steps") != 27:
+    if evidence.get("completed_steps") != 29 or evidence.get("total_steps") != 29:
         raise ValueError("Native journey did not complete its declared steps")
     final = evidence["final"]
     if final.get("canonical_json") != evidence.get("initial_canonical_json"):
@@ -95,6 +95,25 @@ def validate(directory: Path, source_sha: str) -> dict:
     captures = evidence.get("captures", [])
     if [capture.get("name") for capture in captures] != ["baseline", "rejected", "connected", "reconnected", "complete"]:
         raise ValueError("Actual readback coverage is incomplete")
+    zoom_checks = [check["observed_state"] for check in evidence.get("checks", [])
+                   if check.get("check") == "Zoomed"]
+    if len(zoom_checks) != 1:
+        raise ValueError("The injected native zoom observation is missing")
+    zoomed = zoom_checks[0]
+    baseline = captures[0]["observed_state"]
+    before_zoom = baseline.get("geometry", {}).get("camera", {}).get("zoom")
+    after_zoom = zoomed.get("geometry", {}).get("camera", {}).get("zoom")
+    if (before_zoom != 1.0 or after_zoom != 1.125
+            or zoomed.get("canonical_json") != evidence["initial_canonical_json"]
+            or zoomed.get("revision") != 0 or zoomed.get("history") != {"undo": 0, "redo": 0}
+            or zoomed.get("pending") is not False or zoomed.get("has_gesture") is not False
+            or zoomed.get("counters", {}).get("view_transaction_intents") != 0):
+        raise ValueError("Injected zoom did not change only the camera before graph authoring")
+    for target in ("port:a:source:main", "port:b:target:input"):
+        before = baseline.get("targets", {}).get(target)
+        after = zoomed.get("targets", {}).get(target)
+        if not isinstance(before, list) or not isinstance(after, list) or before == after:
+            raise ValueError("Painted port positions did not update after injected zoom")
     files = []
     legacy_raw = captures[0]["observed_state"].get("legacy_raw")
     if not isinstance(legacy_raw, str) or '1.23000' not in legacy_raw:
@@ -110,6 +129,8 @@ def validate(directory: Path, source_sha: str) -> dict:
         if not 0 < capture.get("requested_frame", 0) <= capture.get("readback_frame", 0):
             raise ValueError("Native readback frame identity is missing")
         state = capture["observed_state"]
+        if capture["name"] != "baseline" and state.get("geometry", {}).get("camera", {}).get("zoom") != after_zoom:
+            raise ValueError("The connection readback did not retain the observed zoom")
         if state.get("legacy_raw") != legacy_raw or state.get("node_count") != 3:
             raise ValueError("An unrelated synthetic record changed during the native journey")
         name = capture["name"]

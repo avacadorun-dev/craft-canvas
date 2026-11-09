@@ -20,6 +20,7 @@ const DEADLINE: Duration = Duration::from_secs(45);
 const RETRY: Duration = Duration::from_millis(600);
 const INPUT_TRACE_LIMIT: usize = 512;
 const FOCUS_DEADLINE: Duration = Duration::from_secs(10);
+const SCRIPTED_ZOOM: f32 = 1.125;
 
 #[derive(Clone, Copy)]
 enum InputOrigin {
@@ -208,6 +209,7 @@ impl Observation {
 
 #[derive(Clone, Copy, Debug)]
 enum Check {
+    Zoomed,
     HeldInitial,
     Rejected,
     Created,
@@ -220,6 +222,7 @@ enum Check {
 #[derive(Clone, Copy, Debug)]
 enum Step {
     Snapshot(&'static str),
+    Zoom,
     Click(&'static str),
     Drag(&'static str, &'static str),
     Cancel(&'static str),
@@ -228,6 +231,8 @@ enum Step {
 fn steps() -> Vec<Step> {
     vec![
         Step::Snapshot("baseline"),
+        Step::Zoom,
+        Step::Check(Check::Zoomed),
         Step::Drag("port:a:source:main", "port:b:target:input"),
         Step::Check(Check::HeldInitial),
         Step::Click("button:reject"),
@@ -380,6 +385,21 @@ impl Capture {
             return;
         };
         let points = match step {
+            Step::Zoom => {
+                // The initial synthetic camera center is the empty gap between cards.
+                // Read its viewport position rather than using screen/DPI constants.
+                let viewport = &observation.state["geometry"]["viewport"];
+                viewport[0]
+                    .as_f64()
+                    .zip(viewport[2].as_f64())
+                    .zip(viewport[1].as_f64().zip(viewport[3].as_f64()))
+                    .map(|((left, right), (top, bottom))| {
+                        let point =
+                            Pos2::new(((left + right) / 2.0) as f32, ((top + bottom) / 2.0) as f32);
+                        (point, point)
+                    })
+                    .filter(|(point, _)| point.is_finite())
+            }
             Step::Click(target) | Step::Cancel(target) => observation
                 .targets
                 .get(target)
@@ -403,6 +423,7 @@ impl Capture {
             from.lerp(to, 0.5)
         };
         let events = match (step, self.phase) {
+            (Step::Zoom, 0) => vec![Event::PointerMoved(from), Event::Zoom(SCRIPTED_ZOOM)],
             (_, 0) => pointer(from, true),
             (Step::Click(_), _) => pointer(from, false),
             (Step::Drag(..), 1) => vec![Event::PointerMoved(midpoint)],
@@ -432,6 +453,7 @@ impl Capture {
         self.last_injected = observation.frame;
         self.phase += 1;
         let complete = match step {
+            Step::Zoom => self.phase >= 1,
             Step::Click(_) => self.phase >= 2,
             Step::Drag(..) => self.phase >= 4,
             Step::Cancel(_) => self.phase >= 3,
@@ -658,6 +680,31 @@ impl Capture {
             && observation.state["new_edge"]["from"]["port"] == "main"
             && observation.state["new_edge"]["to"]["node"] == "b";
         match check {
+            Check::Zoomed => {
+                let Some(baseline) = self.captures.first() else {
+                    return false;
+                };
+                let before = &baseline["observed_state"];
+                let zoom_changed = before["geometry"]["camera"]["zoom"]
+                    .as_f64()
+                    .zip(observation.state["geometry"]["camera"]["zoom"].as_f64())
+                    .is_some_and(|(before, after)| {
+                        (after - before * f64::from(SCRIPTED_ZOOM)).abs() < 1e-6
+                    });
+                restored
+                    && observation.state["revision"] == 0
+                    && observation.state["history"]["redo"] == 0
+                    && !observation.state["has_gesture"].as_bool().unwrap_or(true)
+                    && observation.counters.intents == 0
+                    && zoom_changed
+                    && ["port:a:source:main", "port:b:target:input"]
+                        .iter()
+                        .all(|target| {
+                            observation.targets.contains_key(*target)
+                                && observation.state["targets"][*target]
+                                    != before["targets"][*target]
+                        })
+            }
             Check::HeldInitial => initial && observation.pending && observation.awaiting,
             Check::Rejected => initial && observation.pending && observation.rejected,
             Check::Created => {
@@ -686,6 +733,7 @@ impl Capture {
         let evidence = json!({"schema_version":1,"scenario":"connections","status":if failure.is_none(){"passed"}else{"failed"},
             "failure":failure,"source_sha":self.source_sha,"compiled_source_sha":option_env!("CRAFT_CANVAS_SOURCE_SHA"),
             "evidence_kind":"scripted RawInput through compiled native widgets with WGPU readback",
+            "zoom_evidence":"Injected native Zoom event followed by newly measured painted-port drags; not OS pinch/scroll acceptance",
             "os_input_acceptance":false,"physical_touchscreen_acceptance":false,"production_acceptance":false,
             "initial_canonical_json":self.initial,"elapsed_seconds":self.started.elapsed().as_secs_f64(),
             "input_policy":{"mode":"isolated-scripted-fixture",
@@ -829,6 +877,70 @@ mod tests {
             "",
         );
         Ok((capture, observation))
+    }
+
+    #[test]
+    fn injected_zoom_waits_for_the_actual_showcase_camera_and_new_port_positions()
+    -> CaptureResult<()> {
+        let (mut capture, _) = focus_fixture()?;
+        capture.steps = vec![Step::Zoom, Step::Check(Check::Zoomed)];
+        let ctx = egui::Context::default();
+        ctx.all_styles_mut(|style| style.animation_time = 0.0);
+        ctx.options_mut(|options| options.max_passes = std::num::NonZeroUsize::MIN);
+        let mut app = crate::Showcase::new("zoom-regression".into(), None)?;
+        let mut zoom_events = 0;
+        for frame in 0..6 {
+            if frame == 3 {
+                let baseline = app.observation.as_ref().ok_or("baseline observation")?;
+                capture
+                    .captures
+                    .push(json!({"observed_state":baseline.state}));
+            }
+            let mut input = RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    Pos2::ZERO,
+                    Vec2::new(1200.0, 900.0),
+                )),
+                time: Some(f64::from(frame) / 60.0),
+                focused: true,
+                ..Default::default()
+            };
+            if frame >= 3 {
+                capture.inject(&mut input, app.observation.as_ref());
+                zoom_events += input
+                    .events
+                    .iter()
+                    .filter(|event| matches!(event, Event::Zoom(_)))
+                    .count();
+                assert!(
+                    !input
+                        .events
+                        .iter()
+                        .any(|event| matches!(event, Event::PointerButton { .. }))
+                );
+            }
+            app.host.prepare_input(&ctx, &input);
+            let mut output = ctx.run_ui(input, |root| app.show(root));
+            output.textures_delta.clear();
+            output.platform_output.commands.clear();
+            if frame == 3 {
+                // The view reports the camera used to paint this frame, not the
+                // navigation camera scheduled by that frame's Zoom event.
+                assert!(!capture.check(
+                    Check::Zoomed,
+                    app.observation.as_ref().ok_or("zoom input observation")?
+                ));
+            }
+        }
+        assert_eq!(zoom_events, 1);
+        assert_eq!(capture.at, 1);
+        assert!(capture.check(
+            Check::Zoomed,
+            app.observation.as_ref().ok_or("zoomed observation")?
+        ));
+        assert_eq!(app.session.document().raw_json(), crate::FIXTURE);
+        std::fs::remove_dir(&capture.directory)?;
+        Ok(())
     }
 
     #[test]

@@ -55,3 +55,14 @@ CC-03 SHALL pass hosted exact-source checks and independent compiled interaction
 #### Scenario: Four coherent acceptance journeys
 - WHEN the qualified standalone candidate is reviewed
 - THEN connection creation, endpoint revision/no-op, interruption/recovery and embedded-control journeys have exact source, captures, interaction and data/history evidence
+
+#### Scenario: Ordinary direct manipulation after CV-03
+- WHEN the ordinary showcase starts with immediate acknowledgement and Testing collapsed
+- THEN the reviewer can create a connection, move a card through its unobstructed header, select/delete an edge and Undo without navigating the failure-injection controls
+- AND a held/conflicting request remains visibly recoverable outside Testing, with resumed direct editing after explicit safe discard
+- AND embedded text/control input does not become graph movement or deletion
+
+#### Scenario: Coalesced ordinary drag
+- WHEN a native frame contains a primary press on an unobstructed card followed by movement and release
+- THEN the geometry gesture uses the actual press position and emits one guarded movement transaction on release
+- AND outside-origin, embedded-control, consumed connection and interrupted input cannot start a competing geometry gesture

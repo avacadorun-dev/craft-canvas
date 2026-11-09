@@ -389,3 +389,210 @@ fn capture_input_trace_redacts_text_and_character_key_payloads() {
     assert_eq!(key["control"], "redacted");
     assert!(key.get("physical_key").is_none());
 }
+
+fn note_rect(harness: &ShowcaseHarness) -> TestResult<Rect> {
+    harness
+        .ctx
+        .read_response(Id::new("isolated-synthetic-board").with(("node", "a")))
+        .map(|response| response.rect)
+        .ok_or_else(|| "actual note card response".into())
+}
+
+fn verify_ordinary_card_move(same_batch: bool, after_edit: bool) -> TestResult {
+    let mut harness = ShowcaseHarness::new(false)?;
+    assert!(!harness.app.host.input_ownership().any());
+    if after_edit {
+        let text_id = harness
+            .app
+            .host
+            .text_input_id
+            .ok_or("actual text input ID")?;
+        let text_point = harness
+            .ctx
+            .read_response(text_id)
+            .ok_or("actual text input")?
+            .rect
+            .center();
+        harness.frame(pointer(text_point, true))?;
+        harness.frame(pointer(text_point, false))?;
+        harness.frame(vec![Event::Text(" synthetic edited draft".into())])?;
+        assert!(harness.ctx.memory(|memory| memory.has_focus(text_id)));
+        assert!(harness.app.host.draft.contains("synthetic edited draft"));
+        assert_eq!(harness.app.session.document().raw_json(), FIXTURE);
+    }
+    let draft = harness.app.host.draft.clone();
+    let before = harness
+        .app
+        .session
+        .document()
+        .node("a")
+        .ok_or("note")?
+        .bounds();
+    // Header margin is outside the embedded TextEdit; lower background is below it.
+    let offset = if after_edit {
+        Vec2::new(180.0, 200.0)
+    } else {
+        Vec2::new(45.0, 6.0)
+    };
+    let from = note_rect(&harness)?.min + offset;
+    let delta = Vec2::new(-32.0, -40.0);
+    let to = from + delta;
+    if same_batch {
+        let mut events = pointer(from, true);
+        events.push(Event::PointerMoved(to));
+        events.extend(pointer(to, false));
+        harness.frame(events)?;
+    } else {
+        harness.frame(pointer(from, true))?;
+        assert!(harness.app.view.has_gesture());
+        assert!(!harness.app.host.input_ownership().any());
+        harness.frame(vec![Event::PointerMoved(to)])?;
+        assert_eq!(harness.app.session.document().raw_json(), FIXTURE);
+        harness.frame(pointer(to, false))?;
+    }
+    let after = harness
+        .app
+        .session
+        .document()
+        .node("a")
+        .ok_or("note")?
+        .bounds();
+    assert_eq!(after.x, before.x + f64::from(delta.x));
+    assert_eq!(after.y, before.y + f64::from(delta.y));
+    assert_eq!(after.width, before.width);
+    assert_eq!(after.height, before.height);
+    assert_eq!(harness.app.session.history_usage().undo_steps, 1);
+    assert_eq!(harness.app.counters.intents, 1);
+    assert_eq!(harness.app.counters.begin, 0);
+    assert!(!harness.app.view.has_gesture());
+    assert_eq!(harness.app.host.draft, draft);
+    harness.frame(vec![])?;
+    harness.click("button:undo")?;
+    assert_eq!(harness.app.session.document().raw_json(), FIXTURE);
+    assert_eq!(harness.app.session.history_usage().undo_steps, 0);
+    Ok(())
+}
+
+#[test]
+fn ordinary_card_header_and_background_after_editing_move_in_separate_frames() -> TestResult {
+    verify_ordinary_card_move(false, false)?;
+    verify_ordinary_card_move(false, true)
+}
+
+#[test]
+fn ordinary_card_header_and_background_after_editing_move_when_drag_events_coalesce() -> TestResult
+{
+    verify_ordinary_card_move(true, false)?;
+    verify_ordinary_card_move(true, true)
+}
+
+#[test]
+fn coalesced_geometry_cannot_start_outside_the_board_or_rearm_after_interruption() -> TestResult {
+    for interruption in [
+        None,
+        Some(Event::Key {
+            key: egui::Key::Escape,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: Modifiers::NONE,
+        }),
+        Some(Event::WindowFocused(false)),
+        Some(Event::PointerGone),
+    ] {
+        let mut harness = ShowcaseHarness::new(false)?;
+        let rect = note_rect(&harness)?;
+        let from = if interruption.is_some() {
+            rect.min + Vec2::new(45.0, 6.0)
+        } else {
+            Pos2::new(2.0, 2.0)
+        };
+        let to = rect.min + Vec2::new(180.0, 200.0);
+        let mut events = pointer(from, true);
+        events.push(Event::PointerMoved(to));
+        if let Some(interruption) = interruption {
+            let focus_lost = matches!(interruption, Event::WindowFocused(false));
+            events.push(interruption);
+            if focus_lost {
+                events.push(Event::WindowFocused(true));
+            }
+        }
+        // The final pointer/focus are valid again; the prior interruption still wins.
+        events.extend(pointer(to, false));
+        harness.frame(events)?;
+        assert_eq!(harness.app.session.document().raw_json(), FIXTURE);
+        assert_eq!(harness.app.session.history_usage().undo_steps, 0);
+        assert_eq!(harness.app.counters.intents, 0);
+        assert!(!harness.app.view.has_gesture());
+        assert!(harness.app.view.selection().nodes.is_empty());
+    }
+    Ok(())
+}
+
+#[test]
+fn ordinary_geometry_ends_at_release_and_never_reuses_embedded_text_drag() -> TestResult {
+    for moved in [false, true] {
+        let mut harness = ShowcaseHarness::new(false)?;
+        let rect = note_rect(&harness)?;
+        let from = rect.min + Vec2::new(45.0, 6.0);
+        let delta = if moved {
+            Vec2::new(-32.0, -40.0)
+        } else {
+            Vec2::ZERO
+        };
+        let release = from + delta;
+        let before = harness
+            .app
+            .session
+            .document()
+            .node("a")
+            .ok_or("note")?
+            .bounds();
+        let mut events = pointer(from, true);
+        events.push(Event::PointerMoved(release));
+        events.extend(pointer(release, false));
+        events.push(Event::PointerMoved(from + Vec2::new(80.0, 140.0)));
+        // A later independent click must not replace the completed first cycle.
+        events.extend(pointer(Pos2::new(1100.0, 800.0), true));
+        events.extend(pointer(Pos2::new(1100.0, 800.0), false));
+        harness.frame(events)?;
+        let after = harness
+            .app
+            .session
+            .document()
+            .node("a")
+            .ok_or("note")?
+            .bounds();
+        assert_eq!(after.x, before.x + f64::from(delta.x));
+        assert_eq!(after.y, before.y + f64::from(delta.y));
+        assert_eq!(
+            harness.app.session.history_usage().undo_steps,
+            usize::from(moved)
+        );
+        assert_eq!(harness.app.counters.intents, usize::from(moved));
+        assert!(!harness.app.view.has_gesture());
+    }
+
+    let mut harness = ShowcaseHarness::new(false)?;
+    let text_id = harness
+        .app
+        .host
+        .text_input_id
+        .ok_or("actual text input ID")?;
+    let from = harness
+        .ctx
+        .read_response(text_id)
+        .ok_or("actual text input")?
+        .rect
+        .center();
+    let margin = note_rect(&harness)?.min + Vec2::new(180.0, 200.0);
+    let mut events = pointer(from, true);
+    events.push(Event::PointerMoved(margin));
+    events.extend(pointer(margin, false));
+    harness.frame(events)?;
+    assert_eq!(harness.app.session.document().raw_json(), FIXTURE);
+    assert_eq!(harness.app.session.history_usage().undo_steps, 0);
+    assert_eq!(harness.app.counters.intents, 0);
+    assert!(!harness.app.view.has_gesture());
+    Ok(())
+}
