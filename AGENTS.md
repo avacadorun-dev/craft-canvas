@@ -12,3 +12,7 @@
 - No local Cargo build/fetch/test in this task. Resolve and qualify only on GitHub. Local direct rustfmt and static inspection are allowed.
 - Commit focused source and exact evidence. Do not claim native/application acceptance from compilation, generated images or model tests.
 - No releases or product issue closure without the coordinating agent's acceptance workflow.
+
+## Current priority — 2026-11-09
+
+Focus on standalone production readiness and full functional React Flow parity, then qualified WriterCraft integration for original Studio Canvas parity. Follow `docs/ROADMAP.md` strictly, closing one fully verified issue before starting the next. Read `docs/PRODUCTION_PLAN.md`, `docs/REACT_FLOW_PARITY.md` and `docs/WRITERCRAFT_CONSUMER.md`. Preserve current work; do not restart. A separately coordinated agent may deliver non-Canvas WriterCraft alpha.3 in parallel. Do not edit its app behavior; it must wait for an exact qualified engine handoff before Canvas integration. One bounded engine milestone at a time, with independent review; root owns integration, publication and hosted dispatch. Do not wait for upstream maintenance or freeze a narrow four-side API before the full named-port/interaction contract is reviewed. Scope inventories are not exhaustive test matrices or evidence of completion.

@@ -1,5 +1,21 @@
 # Architecture decisions
 
+## ADR 006 — production parity on the preserved authority
+
+Selected 2026-11-09; implementation acceptance pending. The production target is complete observable React Flow capability through native Rust, then full Studio Canvas integration. Retain ADR001–005's canonical model, exact guarded changes and f64 projection. Expand the API through source-backed native equivalents rather than substituting an automatically mutated graph or browser runtime. The [production plan](PRODUCTION_PLAN.md) owns milestone/evidence boundaries; [React Flow inventory](REACT_FLOW_PARITY.md) owns source coverage.
+
+Use React Flow12.12.1/system0.0.84 at `1bc405cd113618c17fd181b931a9fe573bec9fee` as the initial fixed comparison. egui-xyflow and other Rust graphs are source references, not unchanged dependencies. Upstream schedule is not a delivery gate. Ported code keeps exact provenance and license notices; no new dependency or global egui upgrade is selected.
+
+The next model design must separate stable port identity from geometric side and distinguish raw legacy endpoints from their rendered defaults. Multiple handles on one side, dynamic measurements and strict/loose rules cannot be encoded as four side values. Typed connection preview validation is separate from final exact-base validation. Existing opaque envelopes remain canonical; named ports/parent relationships/custom graph fields require a versioned compatible codec with absent-field defaults and refusal of unsupported mutations before any data change. Do not overwrite previously unknown extension values to install a schema.
+
+The interaction layer emits start/update/end/cancel observations and a single completed command intent. Observations cannot grant save/Apply authority. Pending host acknowledgements freeze conflicting commands and preserve drafts; original edges remain canonical throughout reconnection. Raw expected endpoints and displayed fallback ports stay distinct so dropping onto the unchanged displayed anchor is a no-op. Escape, focus loss, pointer loss, outside cancellation, base/board change and competing native controls end capture explicitly, including the release/cancel frame.
+
+Rendering, hit testing and native accessibility derive from the same frame's geometry. Camera/parent/local-origin transforms are resolved before input queries. Host hooks cover node/handle/edge/label bodies and input exclusions; embedded editor/IME/media ownership has priority. Presentation caches are bounded and disposable; they never become another authoritative graph. A managed convenience API, if supplied, must use the same session commands as the controlled host API.
+
+Generic geometry/input/view policies must be configurable while preserving the existing Studio compatibility profile. Parent transforms, snapping, origin/extent rules, source measurement, custom routes and headless bounds must have explicit semantics rather than inheriting application-specific integer rounding or fixed camera limits accidentally. API shape and extension spelling remain subject to CC-02's compatibility review; the narrow four-midpoint connection proposal is not frozen public API.
+
+Ownership distinctions include pointer, keyboard/IME and wheel/scroll/pinch/touch rather than treating two booleans as a permanent complete contract. Before-delete policy can veto, transform or defer a proposed deletion; every deferred decision is revalidated against its captured exact base. A terminal interaction observation occurs even when invalid/cancelled/no-op input creates no transaction. Actual touchscreen evidence is separate from trackpad gestures and synthetic events.
+
 ## ADR 001 — model and native adapter
 
 Accepted 2026-11-08. Two crates share one canonical board: a Rust-only model and an egui 0.36.2 adapter. The adapter emits semantic intents against a private session identity. Host UI and headless commands prepare through the same model and host validation. No app framework, alternate graph model, window loop or media runtime is imported.

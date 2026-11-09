@@ -1,5 +1,11 @@
 # Qualification policy
 
+## Current checkpoint — 2026-11-09
+
+The exact existing engine `6b68eb4e84aa41b713a148e6a456048f3c1168f9` passed [qualification42617390880](https://github.com/avacadorun-dev/craft-canvas/actions/runs/42617390880): committed lock, Rust1.95 formatting, model/native adapter tests and strict Clippy on Ubuntu/macOS/Windows. This includes derived smooth-step routes/markers, shared hit geometry and edge selection/Delete. Earlier e5dc514 failed visibility compilation and was corrected before this qualified revision. These are engineering checks, not complete native/React Flow/production acceptance.
+
+Current active preparation is [CC-01](https://github.com/avacadorun-dev/craft-canvas/issues/1) under [ROADMAP.md](ROADMAP.md). The74-row RF inventory,122props,66source examples, public catalogue and B01–B26 consumer boundary have independent source omission review; every behavior remains unaccepted until its own evidence. The new preparation documents do not modify Rust source or adopt a new dependency. No package publication or production readiness is claimed. Older status paragraphs below are historical checkpoints.
+
 All fixtures are synthetic. Hosted CI must retain exact source, compiler, lock and feature metadata. Locked workspace tests, strict Clippy, rustfmt and the supported MSRV must pass before a revision is acknowledged to WriterCraft.
 
 Model proof does not establish native gestures, media playback, application ownership, IME, accessibility or independent design acceptance. The adapter requires synthetic native egui event paths plus actual compiled host journeys. No private reference archive or owner screenshot belongs in CI.

@@ -1,0 +1,11 @@
+# Native functional parity on one guarded model
+
+ADR006 preserves ADR001–005 while expanding the reusable API. docs/REACT_FLOW_PARITY.md is the exact public-surface/behavior inventory; docs/WRITERCRAFT_CONSUMER.md maps all B01–B26 obligations; docs/ROADMAP.md is execution order; docs/PRODUCTION_PLAN.md defines readiness and measurable targets.
+
+Before commands change, specify stable named/dynamic port addressing separately from geometric side, raw legacy endpoints separately from presentation defaults, and pure preview validation separately from final exact-base preparation. Include strict/loose direction, availability, per-end reconnection policy, removed ports and opaque extension versions. Versioned codecs cannot overwrite previously unknown imported data. Keep the existing Studio profile while configuring general geometry/input policy.
+
+The view projects canonical state and bounded transient state. Ordered interaction observations do not constitute mutations. Host input exclusions must distinguish pointer/keyboard/IME and scroll/wheel/pinch/touch, while recording ownership of terminal release/cancel. Camera/parent/local-origin geometry must be identical for painting, hit testing, accessible actors and host overlays. Native hooks replace component/DOM machinery without removing its capabilities. Before-delete may be vetoed/transformed/deferred with exact-base revalidation.
+
+Keep application projects, schemas, media authorization, durable storage and manuscript relationships in WriterCraft. Demonstrate the library using a standalone synthetic host without that business layer. Use targeted native journeys and the existing semantic/egui tests; avoid a one-test-per-prop or combinatorial matrix. Benchmarks measure declared hardware/build/content and fail against agreed targets rather than granting readiness merely by producing numbers.
+
+No new dependency, engine rewrite, facade package, registry upload or egui upgrade is selected by this preparation change. Future selected dependencies require source/license review and hosted qualification. Package release mechanics follow docs/RELEASING.md and exact package verification; names are not registered until a real successful registry upload.

@@ -1,5 +1,13 @@
 # CraftCanvas product contract
 
+## Current objective — production React Flow parity
+
+The explicit 2026-11-09 priority is a standalone production-quality native Rust library with full functional React Flow parity, followed by complete original Writers Studio Canvas workflows through WriterCraft. The source-backed contract is [React Flow parity](REACT_FLOW_PARITY.md); the consumer boundary is [WriterCraft integration](WRITERCRAFT_CONSUMER.md); delivery and acceptance are defined in [the production plan](PRODUCTION_PLAN.md). These supersede treating the narrow foundation as the final library scope. Current implementation is partial; no production claim is made.
+
+Preserve the existing implementation and authority rather than restarting. Use an exact upstream behavior baseline and explicit native equivalents. CraftCanvas owns delivery and fixes; waiting on another library's development is not a dependency. Unchanged third-party graph-library adoption is not selected. Stable named/dynamic handles, complete graph interactions, custom composition, viewport/query/event APIs, input/accessibility and measurable capacity must be covered before full parity acceptance.
+
+## Preserved foundation requirements
+
 CraftCanvas supplies reusable native board mechanics to hosts such as WriterCraft. The host retains business schemas, project authorization, asset capabilities, UI catalogs, durable revisions, recovery and assistant review.
 
 The foundation must prove: parse synthetic complete JSON Canvas without losing no-edit bytes; preserve unknown envelope fields and large numeric lexemes through known edits; reject duplicate keys and invalid geometry before mutation; prepare/apply/undo against exact session identity; keep node/edge array order; cancel transient gestures on Escape, focus loss or base change; and retain precision at world coordinates ±10,000,000 and zoom 0.12–3.0.
