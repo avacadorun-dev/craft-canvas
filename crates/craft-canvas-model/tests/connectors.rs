@@ -274,3 +274,100 @@ fn opposite_side_self_loop_stays_outside_the_card_at_large_world_coordinates() -
     assert!(!bounds.contains(route.label_anchor()));
     Ok(())
 }
+
+#[test]
+fn named_same_side_loop_uses_distinct_exact_anchors_and_legacy_wrapper_is_unchanged() -> TestResult
+{
+    let bounds = WorldRect {
+        x: 10.0,
+        y: 20.0,
+        width: 200.0,
+        height: 120.0,
+    };
+    let from = WorldPoint { x: 210.0, y: 45.5 };
+    let to = WorldPoint {
+        x: 210.0,
+        y: 110.25,
+    };
+    let route = SmoothStepConnector::loop_between(bounds, from, Side::Right, to, Side::Right)?;
+    assert_eq!(
+        route.waypoints(),
+        &[
+            from,
+            WorldPoint { x: 230.0, y: 45.5 },
+            WorldPoint {
+                x: 230.0,
+                y: 110.25
+            },
+            to,
+        ]
+    );
+    let mut work = WorkControl::new(1000, None);
+    let path = route.flatten(0.1, 64, &mut work)?;
+    assert_eq!(path.first(), Some(&from));
+    assert_eq!(path.last(), Some(&to));
+    assert!(!bounds.contains(route.label_anchor()));
+    let legacy = SmoothStepConnector::loop_around(bounds, Side::Top, Side::Bottom)?;
+    assert_eq!(
+        legacy.waypoints(),
+        &[
+            WorldPoint { x: 110.0, y: 20.0 },
+            WorldPoint { x: 110.0, y: 0.0 },
+            WorldPoint { x: 230.0, y: 0.0 },
+            WorldPoint { x: 230.0, y: 160.0 },
+            WorldPoint { x: 110.0, y: 160.0 },
+            WorldPoint { x: 110.0, y: 140.0 },
+        ]
+    );
+    let coincident = SmoothStepConnector::loop_around(bounds, Side::Top, Side::Top)?;
+    assert_eq!(coincident.waypoints().len(), 8);
+    Ok(())
+}
+
+#[test]
+fn detached_named_loop_expands_its_ring_without_substituting_midpoints() -> TestResult {
+    let bounds = WorldRect {
+        x: 0.0,
+        y: 0.0,
+        width: 100.0,
+        height: 100.0,
+    };
+    let from = WorldPoint {
+        x: 180.5,
+        y: -30.25,
+    };
+    let to = WorldPoint {
+        x: -25.25,
+        y: 130.5,
+    };
+    let route = SmoothStepConnector::loop_between(bounds, from, Side::Right, to, Side::Left)?;
+    assert_eq!(route.waypoints().first(), Some(&from));
+    assert_eq!(route.waypoints().last(), Some(&to));
+    assert_eq!(
+        route.waypoints()[1],
+        WorldPoint {
+            x: 200.5,
+            y: -30.25
+        }
+    );
+    assert!(
+        route
+            .waypoints()
+            .windows(2)
+            .all(|pair| pair[0].x == pair[1].x || pair[0].y == pair[1].y)
+    );
+    assert!(
+        SmoothStepConnector::loop_between(
+            bounds,
+            WorldPoint {
+                x: f64::NAN,
+                y: 0.0
+            },
+            Side::Top,
+            to,
+            Side::Left
+        )
+        .is_err()
+    );
+    Ok(())
+}

@@ -1,8 +1,16 @@
 //! A relative-origin native viewport emits guarded intents instead of saving another model.
+use crate::connection::{
+    CanvasInputOwnership, ConnectionCancelReason, ConnectionController, ConnectionEvent,
+    ConnectionInput, ConnectionOptions, ConnectionPreview, ConnectionPreviewState,
+    ConnectionSubmissionState,
+};
+use crate::port_geometry::{
+    PortAnchor, PortFrame, PortFrameConfig, VisiblePortGeometry, VisibleReconnectHandle,
+};
 use craft_canvas_model::{
     Camera, CanvasCommand, CanvasDialect, CanvasError, CanvasSession, CanvasTransaction,
-    ConnectorEnd, ContentIdentity, GroupBehavior, NodeKind, NodeRecord, Selection, Side,
-    SmoothStepConnector, WorkControl, WorldPoint, WorldRect, distance_to_segment,
+    ContentIdentity, GroupBehavior, NodeKind, NodeRecord, PortBinding, PortEndpoint, PortKey,
+    PreparedChange, Selection, WorkControl, WorldPoint, WorldRect, distance_to_segment,
 };
 use egui::{
     Align2, Color32, FontId, Id, Key, PointerButton, Pos2, Rect, Sense, Stroke, StrokeKind, Ui,
@@ -83,6 +91,12 @@ pub struct CanvasViewConfig {
     pub interactive: bool,
     /// Block board shortcuts while a host dialog, composer or embedded editor owns input.
     pub shortcuts_blocked: bool,
+    /// Opt-in direct connection interaction; existing hosts can adopt acknowledgement explicitly.
+    pub connections: Option<ConnectionOptions>,
+    /// Current host overlay/editor ownership, merged with body control ownership.
+    pub input_ownership: CanvasInputOwnership,
+    /// Current-frame overlay rectangles excluded from board input.
+    pub input_exclusions: Vec<Rect>,
 }
 impl CanvasViewConfig {
     /// Create a host-themed configuration; callers replace labels from their locale catalog.
@@ -93,6 +107,9 @@ impl CanvasViewConfig {
             labels: CanvasViewLabels::default(),
             interactive: true,
             shortcuts_blocked: false,
+            connections: None,
+            input_ownership: CanvasInputOwnership::default(),
+            input_exclusions: Vec::new(),
         }
     }
 }
@@ -106,6 +123,25 @@ pub struct NodeBodyResponse {
 }
 /// Authorized host rendering only. Raw file/URL strings never become ambient I/O here.
 pub trait CanvasViewHost {
+    /// Reserve a stable edge identity once a connection drag begins. None declines creation.
+    /// The host owns allocation; this does not insert or save any record.
+    fn allocate_edge_id(
+        &mut self,
+        _base: ContentIdentity,
+        _origin: &PortEndpoint,
+    ) -> craft_canvas_model::Result<Option<String>> {
+        Ok(None)
+    }
+    /// Current-frame native ownership after body painting, including wheel/touch/IME.
+    fn input_ownership(&self) -> CanvasInputOwnership {
+        CanvasInputOwnership::default()
+    }
+    /// Refine a canonical named port using current-frame measured node-local geometry.
+    /// Increment connection options generation whenever external measurements/policy change.
+    fn port_anchor(&self, _node: &NodeRecord, _key: &PortKey) -> Option<PortAnchor> {
+        None
+    }
+
     /// A retained new-card input, rendered only against its exact unchanged base.
     /// The default has no provisional surface; returning an editor grants no edit authority.
     fn pending_text_editor(&self) -> Option<&crate::TextCardEditor> {
@@ -220,6 +256,18 @@ pub struct CanvasViewOutput {
     pub nodes: Vec<VisibleNodeGeometry>,
     /// Actual visible connector paths and label positions, shared with pointer hit testing.
     pub edges: Vec<VisibleEdgeGeometry>,
+    /// Current-frame painted connection handles, sharing edge/hit geometry.
+    pub ports: Vec<VisiblePortGeometry>,
+    /// Selected-edge endpoint handles with exact original and displayed bindings.
+    pub reconnect_handles: Vec<VisibleReconnectHandle>,
+    /// Disposable connection preview, including retained pending acknowledgement.
+    pub connection_preview: Option<ConnectionPreview>,
+    /// Ordered lifecycle observations independent of canonical mutation authority.
+    pub connection_events: Vec<ConnectionEvent>,
+    /// Input consumed by a connection, including its terminal release/cancel frame.
+    pub consumed_input: CanvasInputOwnership,
+    /// The exact camera used by this frame's paint, hits and observations.
+    pub frame_camera: Camera,
 }
 struct MoveGesture {
     base: ContentIdentity,
@@ -254,6 +302,7 @@ pub struct CanvasView {
     base: Option<ContentIdentity>,
     gesture: Option<Gesture>,
     last_size: Option<[u32; 2]>,
+    connection: ConnectionController,
 }
 impl CanvasView {
     /// Current camera; the host may retain it per board.
@@ -262,6 +311,8 @@ impl CanvasView {
     }
     /// Replace a previously validated camera without changing canonical data.
     pub fn set_camera(&mut self, camera: Camera) {
+        self.connection
+            .cancel(ConnectionCancelReason::CameraChanged);
         self.gesture = None;
         self.camera = camera;
     }
@@ -271,16 +322,60 @@ impl CanvasView {
     }
     /// Select explicit stable identities; absent IDs are removed on the next frame.
     pub fn set_selection(&mut self, selection: Selection) {
+        self.connection
+            .cancel(ConnectionCancelReason::SelectionChanged);
         self.gesture = None;
         self.selection = selection;
     }
     /// Cancel uncommitted input on project/view/dialog lifecycle changes.
     pub fn cancel_transient(&mut self) {
+        self.connection
+            .cancel(ConnectionCancelReason::HostCancelled);
         self.gesture = None;
     }
     /// Whether a geometry gesture is waiting for completion.
     pub fn has_gesture(&self) -> bool {
         self.gesture.is_some()
+            || self.connection.has_gesture()
+            || self.connection.connection_pending()
+    }
+    /// Whether a submitted connection still awaits an exact host acknowledgement or recovery.
+    pub fn connection_pending(&self) -> bool {
+        self.connection.connection_pending()
+    }
+    /// Inspect retained submission/rejection/conflict without claiming persistence success.
+    pub fn connection_status(&self) -> Option<&ConnectionSubmissionState> {
+        self.connection.connection_status()
+    }
+    /// Bind the exact guarded candidate before the host performs its durable checkpoint.
+    pub fn bind_connection_prepared(
+        &mut self,
+        prepared: &PreparedChange,
+    ) -> craft_canvas_model::Result<()> {
+        self.connection.bind_connection_prepared(prepared)
+    }
+    /// Confirm exact next-revision candidate bytes after host checkpoint and session Apply.
+    pub fn acknowledge_connection(
+        &mut self,
+        session: &CanvasSession,
+    ) -> craft_canvas_model::Result<()> {
+        self.connection.acknowledge_connection(session)
+    }
+    /// Retain a rejected request for explicit retry; this does not cancel in-flight host work.
+    pub fn reject_connection(&mut self, reason: &str) -> craft_canvas_model::Result<()> {
+        self.connection.reject_connection(reason)
+    }
+    /// Revalidate and return one retry request against the retained exact base.
+    pub fn retry_connection(
+        &mut self,
+        session: &CanvasSession,
+        dialect: &dyn CanvasDialect,
+    ) -> craft_canvas_model::Result<CanvasTransaction> {
+        self.connection.retry_connection(session, dialect)
+    }
+    /// Dismiss only a host-rejected request; an unconfirmed submission cannot be retracted here.
+    pub fn dismiss_connection(&mut self) -> craft_canvas_model::Result<()> {
+        self.connection.dismiss_connection()
     }
     /// Fit all or selected node bounds using the actual host viewport size.
     pub fn fit(
@@ -289,6 +384,8 @@ impl CanvasView {
         size: Vec2,
         selected: bool,
     ) -> craft_canvas_model::Result<()> {
+        self.connection
+            .cancel(ConnectionCancelReason::CameraChanged);
         let bounds = session
             .document()
             .nodes()
@@ -320,6 +417,8 @@ impl CanvasView {
             WidgetInfo::labeled(WidgetType::Other, config.interactive, &config.labels.canvas)
         });
         let size = point(viewport.width(), viewport.height());
+        let frame_camera = self.camera;
+        let mut navigation_camera = frame_camera;
         let mut intents = vec![];
         let mut errors = vec![];
         let dimensions = [viewport.width().to_bits(), viewport.height().to_bits()];
@@ -349,12 +448,17 @@ impl CanvasView {
         ui.painter()
             .rect_filled(viewport, 0.0, config.style.background);
         self.paint_grid(ui, viewport, config.style.grid);
-        let painted_edges = self.paint_edges(ui, viewport, session, config, &mut errors);
-        let painter = ui.painter().with_clip_rect(viewport);
+        // Reserve an earlier paint position: current-frame host port measurements are
+        // available after bodies paint, while canonical edges still belong behind them.
+        let painter = ui
+            .painter()
+            .with_clip_rect(viewport.intersect(ui.clip_rect()));
+        let edge_shape = painter.add(egui::Shape::Noop);
         let mut observed = vec![];
         let mut pointer_captured = false;
         let mut keyboard_captured = false;
         let mut node_focus = false;
+        let mut focused_node = None;
         let mut double_clicked = None;
         let world_view = world_rect(self.camera, viewport);
         let pending = if config.interactive {
@@ -431,10 +535,7 @@ impl CanvasView {
                 node_response
             };
             if node_response.gained_focus() {
-                self.selection = Selection {
-                    nodes: BTreeSet::from([node.id().into()]),
-                    edges: BTreeSet::new(),
-                };
+                focused_node = Some(node.id().to_owned());
             }
             node_focus |= node_response.has_focus();
             if node_response.double_clicked() {
@@ -469,6 +570,150 @@ impl CanvasView {
                 body_clip: clip,
             });
         }
+        let ownership =
+            config
+                .input_ownership
+                .merge(host.input_ownership())
+                .merge(CanvasInputOwnership {
+                    pointer: pointer_captured,
+                    keyboard: keyboard_captured,
+                    ..CanvasInputOwnership::default()
+                });
+        let fallback_options = ConnectionOptions::default();
+        let options = config.connections.as_ref().unwrap_or(&fallback_options);
+        let geometry_config = PortFrameConfig {
+            camera: frame_camera,
+            viewport,
+            clip: viewport.intersect(ui.clip_rect()),
+            port_radius: options.port_radius,
+            reconnect_radius: options.reconnect_radius,
+        };
+        let mut work = WorkControl::new(session.limits().max_work_units, None);
+        let port_frame = match options.validate().and_then(|()| {
+            PortFrame::build(
+                session,
+                dialect,
+                host,
+                geometry_config,
+                |node| self.preview_bounds(node),
+                &mut work,
+            )
+        }) {
+            Ok(frame) => frame,
+            Err(error) => {
+                errors.push(error);
+                self.connection
+                    .cancel(ConnectionCancelReason::GeometryUnavailable);
+                PortFrame::empty(geometry_config)
+            }
+        };
+        let (painted_edges, edge_shapes) =
+            self.derive_edges(session, &port_frame, config, &mut work, &mut errors);
+        painter.set(edge_shape, egui::Shape::Vec(edge_shapes));
+        let mut reconnect_handles = Vec::new();
+        if config.connections.is_some() {
+            for id in &self.selection.edges {
+                if let Some(edge) = session.document().edge(id) {
+                    match port_frame.reconnect_handles(edge, dialect, &mut work) {
+                        Ok(handles) => reconnect_handles.extend(handles),
+                        Err(error) => {
+                            errors.push(error);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        let native_events = ui.input(|input| input.events.clone());
+        let pan_chord = ui.input(|input| {
+            let space = input.key_down(Key::Space)
+                || input.events.iter().any(|event| {
+                    matches!(
+                        event,
+                        egui::Event::Key {
+                            key: Key::Space,
+                            ..
+                        }
+                    )
+                });
+            space
+                && (input.pointer.primary_down()
+                    || input.pointer.primary_pressed()
+                    || input.pointer.primary_released())
+        });
+        let connection_step = self.connection.step(ConnectionInput {
+            session,
+            dialect,
+            host,
+            ports: &port_frame,
+            handles: &reconnect_handles,
+            options: config.connections.as_ref(),
+            board_id: config.id,
+            viewport_id: ui.ctx().viewport_id(),
+            viewport,
+            camera: frame_camera,
+            events: &native_events,
+            pointer_pos: ui.input(|input| input.pointer.interact_pos()),
+            primary_down: ui.input(|input| input.pointer.primary_down()),
+            focused,
+            enabled: ui.is_enabled() && config.interactive && !config.shortcuts_blocked,
+            ownership: ownership.merge(CanvasInputOwnership {
+                keyboard: pan_chord,
+                ..CanvasInputOwnership::default()
+            }),
+            exclusions: &config.input_exclusions,
+        });
+        let connection_blocking = connection_step.blocking;
+        if let Some(transaction) = connection_step.transaction {
+            intents.push(CanvasIntent::Transaction(transaction));
+        }
+        errors.extend(connection_step.errors);
+        let connection_preview = connection_step.preview;
+        if let Some(preview) = &connection_preview {
+            let color = match preview.state {
+                ConnectionPreviewState::Invalid => config.style.error,
+                ConnectionPreviewState::Unattached => config.style.border,
+                ConnectionPreviewState::Pending(_) => config.style.selection.gamma_multiply(0.65),
+                ConnectionPreviewState::Valid => config.style.selection,
+            };
+            match preview
+                .route
+                .flatten(0.35 / frame_camera.zoom(), 128, &mut work)
+            {
+                Ok(points) => {
+                    painter.add(egui::Shape::line(
+                        points
+                            .into_iter()
+                            .map(|point| screen(frame_camera, point, viewport))
+                            .collect(),
+                        Stroke::new(2.5, color),
+                    ));
+                }
+                Err(error) => errors.push(error),
+            }
+        }
+        let ports = if config.connections.is_some() {
+            Self::paint_connection_handles(
+                ui,
+                &port_frame,
+                &reconnect_handles,
+                connection_preview.as_ref(),
+                options,
+                config,
+                ownership,
+            );
+            port_frame.ports.clone()
+        } else {
+            Vec::new()
+        };
+        if connection_blocking {
+            self.gesture = None;
+        } else if let Some(id) = focused_node {
+            self.selection = Selection {
+                nodes: BTreeSet::from([id]),
+                edges: BTreeSet::new(),
+            };
+        }
         if pointer_captured || keyboard_captured {
             self.gesture = None;
         }
@@ -477,6 +722,17 @@ impl CanvasView {
             && focused
             && !config.shortcuts_blocked
             && !pointer_captured
+            && !keyboard_captured
+            && !ownership.any()
+            && !connection_blocking
+            && !ui.input(|input| {
+                input.pointer.interact_pos().is_some_and(|point| {
+                    config
+                        .input_exclusions
+                        .iter()
+                        .any(|rect| rect.contains(point))
+                })
+            })
         {
             let pointer = ui.input(|input| input.pointer.interact_pos());
             let delta = ui.input(|input| input.pointer.delta());
@@ -488,11 +744,12 @@ impl CanvasView {
                 if let Some(pointer) = pointer {
                     let local = point(pointer.x - viewport.left(), pointer.y - viewport.top());
                     if zoom != 1.0 {
-                        if let Err(error) = self.camera.zoom_at(f64::from(zoom), local, size) {
+                        if let Err(error) = navigation_camera.zoom_at(f64::from(zoom), local, size)
+                        {
                             errors.push(error);
                         }
                     } else if scroll != Vec2::ZERO
-                        && let Err(error) = self.camera.pan(point(scroll.x, scroll.y))
+                        && let Err(error) = navigation_camera.pan(point(scroll.x, scroll.y))
                     {
                         errors.push(error);
                     }
@@ -501,16 +758,14 @@ impl CanvasView {
             }
             let pressed = ui.input(|input| input.pointer.primary_pressed());
             let released = ui.input(|input| input.pointer.primary_released());
-            let pan = ui.input(|input| {
-                input.pointer.button_down(PointerButton::Middle)
-                    || (input.key_down(Key::Space) && input.pointer.primary_down())
-            });
+            let pan =
+                ui.input(|input| input.pointer.button_down(PointerButton::Middle) || pan_chord);
             if inside && pan && self.gesture.is_none() {
                 self.gesture = Some(Gesture::Pan);
             }
             if let Some(Gesture::Pan) = self.gesture {
                 if pan {
-                    if let Err(error) = self.camera.pan(point(delta.x, delta.y)) {
+                    if let Err(error) = navigation_camera.pan(point(delta.x, delta.y)) {
                         errors.push(error);
                     }
                 } else {
@@ -679,7 +934,8 @@ impl CanvasView {
                     _ => {}
                 }
             }
-            if let Some(id) = double_clicked
+            if !pan
+                && let Some(id) = double_clicked
                 && let Some(node) = session.document().node(&id)
             {
                 if matches!(node.kind(), NodeKind::Text) {
@@ -695,6 +951,7 @@ impl CanvasView {
                 }
             }
             if response.double_clicked()
+                && !pan
                 && let Some(pointer) = pointer
             {
                 let world = self.camera.view_to_world(
@@ -714,6 +971,10 @@ impl CanvasView {
                 self.keyboard(ui, session, dialect, response.id, config.id, &mut intents);
             }
         }
+        if navigation_camera != frame_camera {
+            self.camera = navigation_camera;
+            ui.ctx().request_repaint();
+        }
         CanvasViewOutput {
             response,
             intents,
@@ -721,6 +982,12 @@ impl CanvasView {
             viewport,
             nodes: observed,
             edges: painted_edges,
+            ports,
+            reconnect_handles,
+            connection_preview,
+            connection_events: connection_step.events,
+            consumed_input: connection_step.consumed_input,
+            frame_camera,
         }
     }
     fn keyboard(
@@ -837,71 +1104,19 @@ impl CanvasView {
             _ => node.bounds(),
         }
     }
-    fn paint_edges(
+    fn derive_edges(
         &self,
-        ui: &Ui,
-        viewport: Rect,
         session: &CanvasSession,
+        frame: &PortFrame,
         config: &CanvasViewConfig,
+        work: &mut WorkControl<'_>,
         errors: &mut Vec<CanvasError>,
-    ) -> Vec<VisibleEdgeGeometry> {
-        let clip = viewport.intersect(ui.clip_rect());
-        if !clip.is_positive() {
-            return Vec::new();
-        }
-        let painter = ui.painter().with_clip_rect(clip);
-        let world_view = world_rect(self.camera, viewport.expand(12.0));
+    ) -> (Vec<VisibleEdgeGeometry>, Vec<egui::Shape>) {
         let mut observed = Vec::new();
-        let mut work = WorkControl::new(session.limits().max_work_units, None);
+        let mut shapes = Vec::new();
+        let mut reported = false;
         for edge in session.document().edges() {
-            let derived = (|| -> craft_canvas_model::Result<Option<VisibleEdgeGeometry>> {
-                work.charge(1)?;
-                let from = session
-                    .document()
-                    .node(edge.from_node())
-                    .ok_or_else(|| CanvasError::NotFound(edge.from_node().into()))?;
-                let to = session
-                    .document()
-                    .node(edge.to_node())
-                    .ok_or_else(|| CanvasError::NotFound(edge.to_node().into()))?;
-                // Loose source handles choose the first (Top) handle when a legacy side
-                // is omitted. This fallback is presentation only, never a JSON rewrite.
-                let from_side = edge.from_side().unwrap_or(Side::Top);
-                let to_side = edge.to_side().unwrap_or(Side::Top);
-                let route = if edge.from_node() == edge.to_node() {
-                    SmoothStepConnector::loop_around(self.preview_bounds(from), from_side, to_side)?
-                } else {
-                    SmoothStepConnector::between(
-                        from_side.point(self.preview_bounds(from)),
-                        from_side,
-                        to_side.point(self.preview_bounds(to)),
-                        to_side,
-                    )?
-                };
-                if !world_view.intersects(route.bounds()) {
-                    return Ok(None);
-                }
-                let points: Vec<_> = route
-                    .flatten(0.35 / self.camera.zoom(), 64, &mut work)?
-                    .into_iter()
-                    .map(|point| screen(self.camera, point, viewport))
-                    .collect();
-                let marker_size = (8.0 * self.camera.zoom()) as f32;
-                let source_arrow = (edge.from_end() == ConnectorEnd::Arrow)
-                    .then(|| arrow(&points, false, marker_size))
-                    .flatten();
-                let target_arrow = (edge.to_end() == ConnectorEnd::Arrow)
-                    .then(|| arrow(&points, true, marker_size))
-                    .flatten();
-                Ok(Some(VisibleEdgeGeometry {
-                    edge_id: edge.id().into(),
-                    points,
-                    label_anchor: screen(self.camera, route.label_anchor(), viewport),
-                    source_arrow,
-                    target_arrow,
-                }))
-            })();
-            match derived {
+            match frame.edge_geometry(edge, work) {
                 Ok(Some(geometry)) => {
                     let selected = self.selection.edges.contains(edge.id());
                     let color = if selected {
@@ -913,12 +1128,12 @@ impl CanvasView {
                         (if selected { 3.0 } else { 2.0 }) * self.camera.zoom() as f32,
                         color,
                     );
-                    painter.add(egui::Shape::line(geometry.points.clone(), stroke));
+                    shapes.push(egui::Shape::line(geometry.points.clone(), stroke));
                     for triangle in [geometry.source_arrow, geometry.target_arrow]
                         .into_iter()
                         .flatten()
                     {
-                        painter.add(egui::Shape::convex_polygon(
+                        shapes.push(egui::Shape::convex_polygon(
                             triangle.to_vec(),
                             color,
                             Stroke::NONE,
@@ -928,13 +1143,103 @@ impl CanvasView {
                 }
                 Ok(None) => {}
                 Err(error) => {
-                    // A bounded frame reports one actionable failure, not one per remaining edge.
-                    errors.push(error);
-                    break;
+                    let exhausted = matches!(
+                        error,
+                        CanvasError::WorkLimit | CanvasError::Cancelled | CanvasError::Limit(_)
+                    );
+                    if !reported {
+                        errors.push(error);
+                        reported = true;
+                    }
+                    if exhausted {
+                        break;
+                    }
                 }
             }
         }
-        observed
+        (observed, shapes)
+    }
+    fn paint_connection_handles(
+        ui: &mut Ui,
+        frame: &PortFrame,
+        handles: &[VisibleReconnectHandle],
+        preview: Option<&ConnectionPreview>,
+        options: &ConnectionOptions,
+        config: &CanvasViewConfig,
+        ownership: CanvasInputOwnership,
+    ) {
+        let painter = ui.painter().with_clip_rect(frame.config.clip);
+        for port in &frame.ports {
+            let selected = preview.is_some_and(|preview| {
+                preview.from.as_ref() == Some(&port.endpoint)
+                    || preview.to.as_ref() == Some(&port.endpoint)
+            });
+            let invalid = selected
+                && preview.is_some_and(|preview| preview.state == ConnectionPreviewState::Invalid);
+            let color = if invalid {
+                config.style.error
+            } else if selected {
+                config.style.selection
+            } else if !port.connectable || ownership.any() {
+                config.style.border.gamma_multiply(0.45)
+            } else {
+                config.style.selection
+            };
+            painter.circle_filled(port.center, options.port_radius, config.style.card);
+            painter.circle_stroke(
+                port.center,
+                options.port_radius,
+                Stroke::new(if selected { 2.5 } else { 1.5 }, color),
+            );
+            let identity = format!("{:?}", port.endpoint.binding);
+            let label = match &port.endpoint.binding {
+                PortBinding::Named(key) => format!("{}: {}", options.labels.port, key.id),
+                PortBinding::Legacy(_) => options.labels.port.clone(),
+            };
+            let response = ui.interact(
+                port.hit_rect,
+                config.id.with(("port", &port.endpoint.node_id, identity)),
+                Sense::hover(),
+            );
+            response.widget_info(|| {
+                WidgetInfo::labeled(
+                    WidgetType::Other,
+                    port.connectable && !ownership.any(),
+                    &label,
+                )
+            });
+            response.on_hover_text(label);
+        }
+        for handle in handles {
+            if handle.center != handle.anchor_center {
+                painter.line_segment(
+                    [handle.anchor_center, handle.center],
+                    Stroke::new(1.0, config.style.selection),
+                );
+            }
+            painter.circle_filled(handle.center, options.reconnect_radius, config.style.card);
+            painter.circle_stroke(
+                handle.center,
+                options.reconnect_radius,
+                Stroke::new(2.0, config.style.selection),
+            );
+            let (tag, label) = match handle.end {
+                craft_canvas_model::ConnectorEndpointKind::From => {
+                    ("from", &options.labels.reconnect_from)
+                }
+                craft_canvas_model::ConnectorEndpointKind::To => {
+                    ("to", &options.labels.reconnect_to)
+                }
+            };
+            let response = ui.interact(
+                handle.hit_rect,
+                config.id.with(("reconnect", &handle.edge_id, tag)),
+                Sense::hover(),
+            );
+            response
+                .widget_info(|| WidgetInfo::labeled(WidgetType::Other, !ownership.any(), label));
+            response.on_hover_text(label);
+        }
     }
     fn paint_grid(&self, ui: &Ui, viewport: Rect, color: Color32) {
         let spacing = (24.0 * self.camera.zoom()).max(12.0);
@@ -987,19 +1292,6 @@ fn hit_edge(edges: &[VisibleEdgeGeometry], pointer: Pos2) -> Option<&VisibleEdge
                 sides.iter().all(|side| *side >= 0.0) || sides.iter().all(|side| *side <= 0.0)
             })
     })
-}
-fn arrow(points: &[Pos2], at_end: bool, size: f32) -> Option<[Pos2; 3]> {
-    let (tip, neighbor) = if at_end {
-        let tip = *points.last()?;
-        (tip, *points.iter().rev().find(|point| **point != tip)?)
-    } else {
-        let tip = *points.first()?;
-        (tip, *points.iter().find(|point| **point != tip)?)
-    };
-    let direction = (neighbor - tip).normalized();
-    let center = tip + direction * size;
-    let perpendicular = Vec2::new(-direction.y, direction.x) * size * 0.5;
-    Some([tip, center + perpendicular, center - perpendicular])
 }
 fn point(x: f32, y: f32) -> WorldPoint {
     WorldPoint {

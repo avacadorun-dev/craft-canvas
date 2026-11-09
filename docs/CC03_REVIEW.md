@@ -1,0 +1,9 @@
+# CC-03 independent review
+
+2026-11-09 source review, before hosted qualification. A separate read-only reviewer inspected the controller, geometry, model routing, view integration, targeted regressions and isolated showcase/capture infrastructure. The reviewer did not implement these files.
+
+Initial findings were corrected: a named port at the legacy midpoint must not turn an unchanged reconnection into a mutation; coincident self-loop grips must expose both ends; a stationary pointer must yield to a newly appearing overlay; Space-drag must retain navigation precedence; touch-only input must not depend on synthesized mouse coordinates. Follow-up findings refined overlapping grip placement near adjacent nodes/clipping and Space precedence for an entire press/release batch. Focused tests retain these cases. Native observation logs now retain no-op/cancellation outcomes without requiring a canonical revision change.
+
+The final source review reported **no known blocking source findings** and readiness for hosted qualification. Exact prepared-receipt/session/revision guards, target-start normalization, ordered release handling, bounded retained data and isolated artifact/source provenance were also inspected. Direct formatting, whitespace and Python syntax checks passed.
+
+This is **source qualification only**. Rust compilation/tests, exact hosted build identity, actual compiled captures and independent four-journey interaction acceptance are pending. The issue remains open. A subsequent acceptance entry must identify the exact committed candidate and hash the reviewed evidence; this report does not claim physical touchscreen, downstream WriterCraft or production acceptance.

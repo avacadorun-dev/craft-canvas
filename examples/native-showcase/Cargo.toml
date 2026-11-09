@@ -1,0 +1,17 @@
+[package]
+name = "craft-canvas-showcase"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+craft-canvas-model = { path = "../../crates/craft-canvas-model" }
+craft-canvas-egui = { path = "../../crates/craft-canvas-egui" }
+eframe = { version = "=0.36.2", default-features = false, features = ["wgpu", "accesskit", "default_fonts", "x11", "wayland"] }
+image = { version = "=0.25.10", default-features = false, features = ["png"] }
+serde_json.workspace = true

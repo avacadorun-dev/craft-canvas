@@ -44,17 +44,21 @@ fn frame_with_host_block(
     let triangles = rendered
         .shapes
         .iter()
-        .filter(|shape| {
-            matches!(&shape.shape,
-        egui::Shape::Path(path) if path.closed && path.points.len() == 3)
-        })
-        .count();
+        .map(|shape| triangle_count(&shape.shape))
+        .sum();
     rendered.textures_delta.clear();
     rendered.platform_output.commands.clear();
     Ok((
         output.ok_or_else(|| CanvasError::Invalid("missing native frame".into()))?,
         triangles,
     ))
+}
+fn triangle_count(shape: &egui::Shape) -> usize {
+    match shape {
+        egui::Shape::Path(path) if path.closed && path.points.len() == 3 => 1,
+        egui::Shape::Vec(shapes) => shapes.iter().map(triangle_count).sum(),
+        _ => 0,
+    }
 }
 fn pointer(pos: Pos2, pressed: bool) -> Vec<Event> {
     vec![

@@ -158,13 +158,40 @@ impl SmoothStepConnector {
     /// The shortest side route wins; opposite-side ties use clockwise order. Equal legacy
     /// handles retain a visible complete loop. The record and its sides remain untouched.
     pub fn loop_around(bounds: WorldRect, from_side: Side, to_side: Side) -> Result<Self> {
-        if bounds.width <= 0.0 || bounds.height <= 0.0 {
+        Self::loop_between(
+            bounds,
+            from_side.point(bounds),
+            from_side,
+            to_side.point(bounds),
+            to_side,
+        )
+    }
+
+    /// Route exact same-node anchors through an exterior ring, retaining their tangent sides.
+    /// Distinct anchors on one side share its outside segment; coincident anchors retain a
+    /// complete visible loop. The legacy midpoint wrapper produces its original geometry.
+    pub fn loop_between(
+        bounds: WorldRect,
+        from: WorldPoint,
+        from_side: Side,
+        to: WorldPoint,
+        to_side: Side,
+    ) -> Result<Self> {
+        WorldPoint::new(from.x, from.y)?;
+        WorldPoint::new(to.x, to.y)?;
+        if !bounds.x.is_finite()
+            || !bounds.y.is_finite()
+            || !bounds.width.is_finite()
+            || !bounds.height.is_finite()
+            || bounds.width <= 0.0
+            || bounds.height <= 0.0
+        {
             return Err(CanvasError::Invalid("invalid connector loop bounds".into()));
         }
-        let left = bounds.x - 20.0;
-        let top = bounds.y - 20.0;
-        let right = bounds.x + bounds.width + 20.0;
-        let bottom = bounds.y + bounds.height + 20.0;
+        let left = bounds.x.min(from.x).min(to.x) - 20.0;
+        let top = bounds.y.min(from.y).min(to.y) - 20.0;
+        let right = (bounds.x + bounds.width).max(from.x).max(to.x) + 20.0;
+        let bottom = (bounds.y + bounds.height).max(from.y).max(to.y) + 20.0;
         let corners = [
             WorldPoint { x: right, y: top },
             WorldPoint {
@@ -180,13 +207,31 @@ impl SmoothStepConnector {
             Side::Bottom => 2,
             Side::Left => 3,
         };
-        let from = from_side.point(bounds);
-        let to = to_side.point(bounds);
-        let mut points = vec![from, translated(from, direction(from_side), 20.0)];
+        let gap = |anchor: WorldPoint, side: Side| match side {
+            Side::Top => WorldPoint {
+                x: anchor.x,
+                y: top,
+            },
+            Side::Right => WorldPoint {
+                x: right,
+                y: anchor.y,
+            },
+            Side::Bottom => WorldPoint {
+                x: anchor.x,
+                y: bottom,
+            },
+            Side::Left => WorldPoint {
+                x: left,
+                y: anchor.y,
+            },
+        };
+        let mut points = vec![from, gap(from, from_side)];
         let mut current = index(from_side);
         let clockwise_steps = (index(to_side) + 4 - current) % 4;
         let clockwise = clockwise_steps != 3;
-        let steps = if clockwise_steps == 0 {
+        let steps = if clockwise_steps == 0 && from != to {
+            0
+        } else if clockwise_steps == 0 {
             4
         } else if clockwise {
             clockwise_steps
@@ -202,7 +247,7 @@ impl SmoothStepConnector {
                 points.push(corners[current]);
             }
         }
-        points.push(translated(to, direction(to_side), 20.0));
+        points.push(gap(to, to_side));
         points.push(to);
         for point in &points {
             WorldPoint::new(point.x, point.y)?;

@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/craft-canvas-model", "crates/craft-canvas-egui"]
+members = ["crates/craft-canvas-model", "crates/craft-canvas-egui", "examples/native-showcase"]
 resolver = "3"
 
 [workspace.package]

@@ -28,6 +28,8 @@ The baseline uses **Rust 1.95**, edition 2024, and **egui 0.36.2**. The planned 
 
 The current API does **not yet establish native named-port painting/measurement, direct connection dragging/reconnection, complete custom graph rendering, parent/subflow transforms, viewport controls, touch interaction or graph accessibility**. Source compatibility and actual input acceptance remain explicit gates. Drawing, layout and export primitives also need further work; application media, clipboard I/O and project workflows belong to the host. The [consumer contract](docs/WRITERCRAFT_CONSUMER.md) records that boundary without reducing required features.
 
+The active CC-03 candidate adds opt-in handle dragging, either-end reconnection and exact retained acknowledgement, with a [standalone native showcase](examples/native-showcase/README.md). Its [qualification record](docs/CC03_PROGRESS.md) remains pending; the qualified source pin below stays unchanged until acceptance.
+
 ## Use the qualified source baseline
 
 This pins the existing engine baseline rather than a moving branch. Reproducible source selection does not establish production or application UX acceptance.

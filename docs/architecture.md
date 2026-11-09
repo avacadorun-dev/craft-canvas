@@ -1,5 +1,13 @@
 # Architecture decisions
 
+## ADR 008 — direct gestures over shared frame geometry
+
+Selected 2026-11-09 for CC-03; qualification pending. The native adapter derives one bounded frame of named and implicit legacy anchors after host body measurement, then uses that frame for edge routes, visible grips, hits and interaction observations. Paint order keeps canonical edges behind bodies. Camera navigation is applied for the next frame so input never queries a different transform from the one painted.
+
+An opt-in controller owns one initiating mouse/touch contact through an explicit terminal observation. It emits one guarded transaction and retains pending presentation until the host binds and acknowledges the exact prepared candidate. This remains a presentation state, not another graph or persistence authority. Host body/overlay ownership takes precedence. Coincident endpoint grips are visibly separated with leader lines while retaining exact canonical anchors and bindings.
+
+Use an isolated synthetic eframe showcase for compiled interaction acceptance; the library crates gain no window runtime dependency. Hosted builds resolve and qualify its exact dependency lock and retain a source-bound macOS artifact. Neither this demonstration nor its in-memory acknowledgement establishes WriterCraft adoption or durable storage. See the [CC-03 design](../openspec/changes/direct-connection-gestures/design.md).
+
 ## ADR 007 — compatible named-port metadata
 
 Selected2026-11-09 for CC-02. Store optional version1 `craftCanvas` metadata in the existing raw node/edge envelopes. Node-local `(kind,id)` keys are independent of geometric sides; edge node references remain standard `fromNode`/`toNode`. Preserve unknown versions and malformed known envelopes without interpreting them as editable defaults. Legacy endpoints remain available without migrating stored data. The [exact codec/API contract](../openspec/changes/named-ports-validation/design.md) defines absence, strict/loose validation, actual initiation, dynamic removal and reconnect policy.
