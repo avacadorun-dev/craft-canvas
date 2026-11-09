@@ -471,10 +471,10 @@ pub(crate) fn encode_ports(
             (
                 "connectable",
                 port.connectable,
-                before.map_or(true, |p| p.connectable),
+                before.is_none_or(|p| p.connectable),
             ),
-            ("start", port.start, before.map_or(true, |p| p.start)),
-            ("end", port.end, before.map_or(true, |p| p.end)),
+            ("start", port.start, before.is_none_or(|p| p.start)),
+            ("end", port.end, before.is_none_or(|p| p.end)),
         ] {
             if after != prior {
                 entry.insert(key.into(), raw(&after)?);
