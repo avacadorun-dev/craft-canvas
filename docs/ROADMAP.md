@@ -1,6 +1,6 @@
 # CraftCanvas roadmap
 
-Updated2026-11-09. **One active library issue, strict numerical order.** Current implementation remains the qualified partial foundation6b68eb4; no production/full-parity claim. This roadmap is the execution authority. The [production plan](PRODUCTION_PLAN.md) defines architecture/readiness, [RF inventory](REACT_FLOW_PARITY.md) maps the exact source API and behaviors, and [consumer contract](WRITERCRAFT_CONSUMER.md) preserves every original Studio B01–B26 requirement.
+Updated2026-11-09. **One active library issue, strict numerical order.** Current implementation is the qualified partial foundation99db516; no production/full-parity claim. This roadmap is the execution authority. The [production plan](PRODUCTION_PLAN.md) defines architecture/readiness, [RF inventory](REACT_FLOW_PARITY.md) maps the exact source API and behaviors, and [consumer contract](WRITERCRAFT_CONSUMER.md) preserves every original Studio B01–B26 requirement.
 
 ## Two deliverables
 
@@ -14,8 +14,8 @@ A separate WriterCraft agent is authorized to complete a coherent non-Canvas alp
 | Step | Issue | Result | State |
 |---|---|---|---|
 | CC-01 | [#1](https://github.com/avacadorun-dev/craft-canvas/issues/1) | Full source contract, native equivalents and independent omission review | Complete — [9da1c24](https://github.com/avacadorun-dev/craft-canvas/commit/9da1c24f08efd2742239996401da3f590506d7f0) |
-| CC-02 | [#2](https://github.com/avacadorun-dev/craft-canvas/issues/2) | Named/dynamic ports, validation and compatible legacy codec | Active |
-| CC-03 | [#3](https://github.com/avacadorun-dev/craft-canvas/issues/3) | Direct owned creation/reconnection with cancellation | Queued |
+| CC-02 | [#2](https://github.com/avacadorun-dev/craft-canvas/issues/2) | Named/dynamic ports, validation and compatible legacy codec | Complete — [99db516](https://github.com/avacadorun-dev/craft-canvas/commit/99db5166f287831c96da7ba6630a2bb4d620ee4e) |
+| CC-03 | [#3](https://github.com/avacadorun-dev/craft-canvas/issues/3) | Direct owned creation/reconnection with cancellation | Active |
 | CC-04 | [#4](https://github.com/avacadorun-dev/craft-canvas/issues/4) | Selection, movement, resizing, rotation, groups and host drop insertion | Queued |
 | CC-05 | [#5](https://github.com/avacadorun-dev/craft-canvas/issues/5) | Custom node/edge/handle/label native composition | Queued |
 | CC-06 | [#6](https://github.com/avacadorun-dev/craft-canvas/issues/6) | Camera navigation, minimap, controls and overlays | Queued |

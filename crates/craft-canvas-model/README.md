@@ -10,10 +10,10 @@ Current baseline: **Rust 1.95**, edition 2024. This crate has no egui dependency
 
 ```toml
 [dependencies]
-craft-canvas-model = { git = "https://github.com/avacadorun-dev/craft-canvas", rev = "6b68eb4e84aa41b713a148e6a456048f3c1168f9" }
+craft-canvas-model = { git = "https://github.com/avacadorun-dev/craft-canvas", rev = "99db5166f287831c96da7ba6630a2bb4d620ee4e" }
 ```
 
-Full native React Flow functional parity is the project goal, not a claim about this baseline. Named/dynamic ports, richer graph relationships and the complete graph API remain under development. Start with the [ordered roadmap](https://github.com/avacadorun-dev/craft-canvas/blob/feature/native-canvas-foundation/docs/ROADMAP.md), [production plan](https://github.com/avacadorun-dev/craft-canvas/blob/feature/native-canvas-foundation/docs/PRODUCTION_PLAN.md) and [parity inventory](https://github.com/avacadorun-dev/craft-canvas/blob/feature/native-canvas-foundation/docs/REACT_FLOW_PARITY.md); moving documentation does not change the pinned code.
+Full native React Flow functional parity is the project goal, not a claim about this baseline. The named-port model is qualified in this revision; richer graph relationships and the complete graph API remain under development. Start with the [ordered roadmap](https://github.com/avacadorun-dev/craft-canvas/blob/feature/native-canvas-foundation/docs/ROADMAP.md), [production plan](https://github.com/avacadorun-dev/craft-canvas/blob/feature/native-canvas-foundation/docs/PRODUCTION_PLAN.md) and [parity inventory](https://github.com/avacadorun-dev/craft-canvas/blob/feature/native-canvas-foundation/docs/REACT_FLOW_PARITY.md); moving documentation does not change the pinned code.
 
 ## Current capabilities
 
@@ -24,7 +24,7 @@ Full native React Flow functional parity is the project goal, not a claim about 
 - Configurable data/work/history bounds, cooperative preparation cancellation and explicit recoverable errors.
 - f64 camera/rectangle geometry, connector routes and bounded flattening/hit helpers.
 
-Preserved future data is not silently given invented edit semantics. `CanvasDialect` supplies node policies, endpoint eligibility and application validation. The current side-based endpoint type does not yet represent several named handles on one side.
+Preserved future data is not silently given invented edit semantics. `CanvasDialect` supplies node policies, endpoint eligibility and application validation. `PortEndpoint` adds multiple named ports without changing the existing side-based `ConnectorEndpoint`.
 
 ## Minimal in-memory edit
 
@@ -73,9 +73,9 @@ Hosted workspace tests, formatting and strict Clippy run on Linux, macOS and Win
 
 MIT, with third-party notices retained. Connector mathematics includes attributed XYFlow adaptations; see [upstream provenance](https://github.com/avacadorun-dev/craft-canvas/blob/feature/native-canvas-foundation/docs/upstream.md) and [license notices](https://github.com/avacadorun-dev/craft-canvas/tree/feature/native-canvas-foundation/LICENSES). No JavaScript runtime is included.
 
-## CC-02 candidate: stable named ports
+## Stable named ports
 
-The current development candidate adds `SetPorts`, `PortEndpoint`, pure `validate_connection`, `EdgeRecord::connect_ports` and guarded `ConnectPorts`/`ReconnectPort`. These APIs are **not in the qualified Git pin above**. The [headless example](examples/named_ports.rs) authors two ports on one side, previews a connection, prepares/applies it, reparses saved data and checks exact Undo. Its hosted qualification command is `cargo run -p craft-canvas-model --example named_ports --locked`; running it provides model evidence, not native interaction or production acceptance.
+The qualified model provides `SetPorts`, `PortEndpoint`, pure `validate_connection`, `EdgeRecord::connect_ports` and guarded `ConnectPorts`/`ReconnectPort`. These APIs are included in the qualified Git pin above; native named-port gestures remain a later milestone. The [headless example](examples/named_ports.rs) authors two ports on one side, previews a connection, prepares/applies it, reparses saved data and checks exact Undo. Its hosted qualification command is `cargo run -p craft-canvas-model --example named_ports --locked`; running it provides model evidence, not native interaction or production acceptance.
 
 The optional `craftCanvas` version1 extension stores node-local `(kind,id)` port keys, finite local anchor geometry and edge bindings. `connectable`, `start` and `end` default true; omitted edge bindings retain legacy side semantics, and omitted reconnect policy inherits the host default. Strict mode requires normalized source→target direction; actual initiation controls start/end availability. See the [exact schema and API contract](../../openspec/changes/named-ports-validation/design.md).
 

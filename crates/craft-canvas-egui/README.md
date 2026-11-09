@@ -10,8 +10,8 @@ Current baseline: **Rust 1.95**, edition 2024, **egui 0.36.2**. The planned crat
 
 ```toml
 [dependencies]
-craft-canvas-model = { git = "https://github.com/avacadorun-dev/craft-canvas", rev = "6b68eb4e84aa41b713a148e6a456048f3c1168f9" }
-craft-canvas-egui = { git = "https://github.com/avacadorun-dev/craft-canvas", rev = "6b68eb4e84aa41b713a148e6a456048f3c1168f9" }
+craft-canvas-model = { git = "https://github.com/avacadorun-dev/craft-canvas", rev = "99db5166f287831c96da7ba6630a2bb4d620ee4e" }
+craft-canvas-egui = { git = "https://github.com/avacadorun-dev/craft-canvas", rev = "99db5166f287831c96da7ba6630a2bb4d620ee4e" }
 egui = "=0.36.2"
 ```
 
