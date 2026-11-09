@@ -3,5 +3,6 @@
 - [x] Add native event and model acknowledgement/stale/local-history contracts.
 - [x] Author creation-frame focus and owned raw-input hook; retain platform IME output in provisional input/acknowledgement regressions. Source authored only; prior73e4f9b focus behavior was rejected in review.
 - [x] Add owned Escape, disabled input, initial arrows, Tab/accessibility and foreign/modal/native-focus regression cases (hosted execution pending).
+- [x] Add immediate same-batch Cancel freeze and current-frame IME precedence regressions (source authored; hosted execution pending).
 - [ ] Pass exact-source all-platform hosted Rust tests/fmt/strict Clippy.
 - [ ] Qualify host checkpoint/retry/new-card focus/dirty navigation and actual compiled native editing.

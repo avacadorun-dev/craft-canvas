@@ -59,8 +59,13 @@ The host SHALL activate inline focus in the frame that creates or opens the card
 
 Native regression evidence SHALL retain and inspect FullOutput platform IME signals, rather than only the local draft text. Tests SHALL model the actual creation-frame handoff without a hidden empty editor paint.
 
-
 #### Scenario: The host freezes a retained draft
 - **WHEN** the host disables the card while resolving a pending Cancel or showing a blocking modal
 - **THEN** the retained draft SHALL stay visible without accepting text, paste, IME, Done or Cancel input
 - **AND** the disabled editor SHALL NOT acquire or renew focus.
+
+
+#### Scenario: Cancel shares a batch with native text input
+- **WHEN** a valid non-composing card Cancel is queued before mounting and text or paste arrives in the same batch
+- **THEN** the native input SHALL immediately render read-only, preserve the exact draft, retain keyboard ownership and emit only one Cancel without Done or focus reacquisition
+- **AND** current-frame IME events SHALL retain composition precedence rather than freezing or cancelling the native input.

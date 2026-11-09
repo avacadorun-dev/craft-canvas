@@ -509,7 +509,7 @@ fn pending_surface_should_use_the_real_card_host_without_mutating_canonical_or_e
                 );
             });
         });
-        assert!(full.platform_output.ime.is_some());
+        assert_eq!(full.platform_output.ime.is_some(), index != 2);
         assert!(host.output.input.keyboard_captured);
         assert!(!host.output.done_requested);
         assert_eq!(host.output.cancelled, index == 2);
@@ -1034,5 +1034,75 @@ fn queued_escape_should_survive_eframe_deferred_hooks_until_exactly_one_mount() 
     assert!(output.cancelled && !output.done_requested);
     assert!(!frame(&ctx, &mut editor, vec![], 1., true, 1.).cancelled);
     assert_eq!(editor.text(), "Original 😀");
+    Ok(())
+}
+
+#[test]
+fn owned_cancel_should_freeze_same_batch_text_paste_and_done_before_native_mount() -> TestResult {
+    for cancel_first in [true, false] {
+        let session = session()?;
+        let mut editor = TextCardEditor::pending_insertion(&session, pending_node(&session)?)?;
+        *editor.text_mut() = "Exact retained 日本語 e\u{301} 🪶".into();
+        let retained = editor.text().to_owned();
+        let ctx = Context::default();
+        creation_handoff(&ctx, &mut editor)?;
+        let mut events = vec![
+            Event::Text(" unwanted text".into()),
+            Event::Paste(" unwanted paste".into()),
+            key(Key::Enter, Modifiers::COMMAND),
+        ];
+        let escape_index = if cancel_first { 0 } else { events.len() };
+        events.insert(escape_index, key(Key::Escape, Modifiers::NONE));
+        let (output, full) = frame_with_platform(&ctx, &mut editor, events, 0., true, 1., true);
+        assert!(output.cancelled && output.input.keyboard_captured);
+        assert!(!output.changed && !output.done_requested && !output.composing);
+        assert_eq!(editor.text(), retained);
+        assert!(ctx.memory(|memory| memory.focused()).is_none());
+        assert!(full.platform_output.ime.is_none());
+        assert!(!frame(&ctx, &mut editor, vec![], 1., true, 1.).cancelled);
+        assert_eq!(editor.text(), retained);
+        assert!(editor.awaits_insertion());
+    }
+    Ok(())
+}
+
+#[test]
+fn current_frame_ime_should_override_a_deferred_cancel_without_freezing_native_input() -> TestResult
+{
+    let session = session()?;
+    let mut editor = TextCardEditor::pending_insertion(&session, pending_node(&session)?)?;
+    let ctx = Context::default();
+    creation_handoff(&ctx, &mut editor)?;
+    let mut deferred = RawInput {
+        events: vec![key(Key::Escape, Modifiers::NONE)],
+        ..Default::default()
+    };
+    editor.prepare_inline_input(&ctx, &mut deferred, false);
+    assert!(deferred.events.is_empty());
+    let (output, full) = frame_with_platform(
+        &ctx,
+        &mut editor,
+        vec![
+            Event::Ime(egui::ImeEvent::Preedit {
+                text: "にほん".into(),
+                active_range_chars: Some(0..3),
+            }),
+            key(Key::Escape, Modifiers::NONE),
+        ],
+        0.,
+        true,
+        1.,
+        true,
+    );
+    assert!(output.composing && output.input.keyboard_captured);
+    assert!(!output.cancelled && !output.done_requested);
+    assert_eq!(editor.text(), "にほん");
+    assert!(
+        !full
+            .platform_output
+            .ime
+            .ok_or("native IME output")?
+            .should_interrupt_composition
+    );
     Ok(())
 }

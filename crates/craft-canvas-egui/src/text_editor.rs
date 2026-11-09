@@ -323,11 +323,15 @@ impl TextCardEditor {
                 input.consume_key(egui::Modifiers::COMMAND, Key::Enter);
             });
         }
-        let done_key = !composing
-            && owns_focus
-            && ui.input_mut(|input| input.consume_key(egui::Modifiers::COMMAND, Key::Enter));
         let cancel_key =
             std::mem::take(&mut self.inline_cancel_requested) && owns_focus && !composing;
+        let done_key = !cancel_key
+            && !composing
+            && owns_focus
+            && ui.input_mut(|input| input.consume_key(egui::Modifiers::COMMAND, Key::Enter));
+        // A valid Cancel freezes this exact draft before same-batch text/paste can run.
+        // The host's disabled state takes over once it receives the retained intent.
+        let interactive = enabled && !cancel_key;
         let response = egui::ScrollArea::vertical()
             .id_salt(("inline-card-scroll", self.id))
             .max_height(rect.height())
@@ -336,7 +340,7 @@ impl TextCardEditor {
                 ui.add(
                     egui::TextEdit::multiline(&mut self.text)
                         .id(self.id)
-                        .interactive(enabled)
+                        .interactive(interactive)
                         .event_filter(egui::EventFilter {
                             horizontal_arrows: true,
                             vertical_arrows: true,
@@ -357,6 +361,7 @@ impl TextCardEditor {
             })
             .inner;
         if initial_focus
+            && !cancel_key
             && !composing
             && ui.input(|input| input.focused && input.pointer.primary_pressed())
             && ui.memory(|memory| memory.focused().is_none())
@@ -368,7 +373,7 @@ impl TextCardEditor {
         if std::mem::take(&mut self.initial_arrow_navigation) && enabled && response.has_focus() {
             ui.memory_mut(|memory| memory.move_focus(egui::FocusDirection::None));
         }
-        let deliberate_blur = enabled
+        let deliberate_blur = interactive
             && !initial_focus
             && !composing
             && response.lost_focus()
@@ -380,7 +385,7 @@ impl TextCardEditor {
             composing,
             input: crate::NodeBodyResponse {
                 pointer_captured: ui.rect_contains_pointer(rect),
-                keyboard_captured: enabled && (response.has_focus() || composing),
+                keyboard_captured: enabled && (response.has_focus() || composing || cancel_key),
             },
         }
     }
