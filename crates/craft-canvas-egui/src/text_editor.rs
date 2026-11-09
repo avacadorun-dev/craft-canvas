@@ -26,6 +26,7 @@ pub struct TextCardEditor {
     inline_activation: Option<InlineActivation>,
     inline_cancel_requested: bool,
     initial_arrow_navigation: bool,
+    inline_geometry: Option<(egui::Rect, egui::Rect)>,
 }
 #[derive(Clone, Copy)]
 struct InlineActivation {
@@ -101,6 +102,7 @@ impl TextCardEditor {
             inline_activation: None,
             inline_cancel_requested: false,
             initial_arrow_navigation: false,
+            inline_geometry: None,
         })
     }
     /// Whether this draft still awaits the host's exact insertion acknowledgement.
@@ -297,6 +299,16 @@ impl TextCardEditor {
         {
             return InlineTextOutput::default();
         }
+        let visible = rect.intersect(ui.clip_rect());
+        if !visible.is_positive() {
+            return InlineTextOutput::default();
+        }
+        let geometry_changed = self.inline_geometry != Some((rect, visible));
+        let previous_clip_offset = self
+            .inline_geometry
+            .map_or(egui::Vec2::ZERO, |(body, clip)| clip.min - body.min);
+        let clip_offset_delta = (visible.min - rect.min) - previous_clip_offset;
+        self.inline_geometry = Some((rect, visible));
         let enabled = ui.is_enabled();
         let initial_focus =
             enabled && self.inline_activation.is_none() && std::mem::take(&mut self.focus);
@@ -357,33 +369,71 @@ impl TextCardEditor {
         // A valid Cancel freezes this exact draft before same-batch text/paste can run.
         // The host's disabled state takes over once it receives the retained intent.
         let interactive = enabled && !cancel_key;
-        let response = egui::ScrollArea::vertical()
-            .id_salt(("inline-card-scroll", self.id))
-            .max_height(rect.height())
-            .auto_shrink([false, false])
-            .show(ui, |ui| {
-                ui.add(
-                    egui::TextEdit::multiline(&mut self.text)
-                        .id(self.id)
-                        .interactive(interactive)
-                        .event_filter(egui::EventFilter {
-                            horizontal_arrows: true,
-                            vertical_arrows: true,
-                            escape: true,
-                            tab: false,
+        let font = egui::FontId::monospace((13.0 * zoom as f32).clamp(8.0, 42.0));
+        let margin = egui::Margin::same((6.0 * zoom as f32).clamp(3.0, 18.0) as i8);
+        let response = ui
+            .scope_builder(
+                egui::UiBuilder::new()
+                    .id_salt(("inline-card-viewport", self.id))
+                    .max_rect(visible),
+                |ui| {
+                    ui.set_clip_rect(visible);
+                    let salt = ("inline-card-scroll", self.id);
+                    let mut scroll = egui::ScrollArea::both()
+                        .id_salt(salt)
+                        .max_width(visible.width())
+                        .max_height(visible.height())
+                        .min_scrolled_width(0.0)
+                        .min_scrolled_height(0.0)
+                        .auto_shrink([false, false])
+                        .animated(false);
+                    if clip_offset_delta != egui::Vec2::ZERO {
+                        let offset =
+                            egui::scroll_area::State::load(ui.ctx(), ui.make_persistent_id(salt))
+                                .map_or(egui::Vec2::ZERO, |state| state.offset);
+                        scroll = scroll
+                            .scroll_offset((offset + clip_offset_delta).max(egui::Vec2::ZERO));
+                    }
+                    scroll
+                        .show(ui, |ui| {
+                            let output = egui::TextEdit::multiline(&mut self.text)
+                                .id(self.id)
+                                .interactive(interactive)
+                                .event_filter(egui::EventFilter {
+                                    horizontal_arrows: true,
+                                    vertical_arrows: true,
+                                    escape: true,
+                                    tab: false,
+                                })
+                                .font(font.clone())
+                                .desired_width(rect.width())
+                                .desired_rows(1)
+                                .frame(egui::Frame::new().inner_margin(margin))
+                                .margin(margin)
+                                // Keep full-card wrapping even when only a fragment is visible.
+                                .min_size(rect.size())
+                                .show(ui);
+                            if geometry_changed
+                                && output.response.has_focus()
+                                && let Some(cursor) = output.cursor_range
+                            {
+                                let row_height = ui.fonts_mut(|fonts| fonts.row_height(&font));
+                                let caret = egui::text_selection::text_cursor_state::cursor_rect(
+                                    &output.galley,
+                                    &cursor.primary,
+                                    row_height,
+                                )
+                                .translate(
+                                    output.galley_pos.to_vec2()
+                                        - egui::vec2(output.galley.rect.left(), 0.0),
+                                );
+                                ui.scroll_to_rect(caret, None);
+                            }
+                            output.response
                         })
-                        .font(egui::FontId::monospace(
-                            (13.0 * zoom as f32).clamp(8.0, 42.0),
-                        ))
-                        .desired_width(rect.width())
-                        .desired_rows(1)
-                        .frame(egui::Frame::new())
-                        .min_size(egui::vec2(0.0, rect.height()))
-                        .margin(egui::Margin::same(
-                            (6.0 * zoom as f32).clamp(3.0, 18.0) as i8
-                        )),
-                )
-            })
+                        .inner
+                },
+            )
             .inner;
         if immediate_focus
             && !cancel_key

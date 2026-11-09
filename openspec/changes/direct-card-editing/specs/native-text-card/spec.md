@@ -105,3 +105,16 @@ Unmodified, non-repeating Enter SHALL request the existing exact-base EditText i
 - **THEN** Canvas SHALL NOT consume Enter or emit an edit intent.
 
 Eligible text cards SHALL expose a host-localized hover hint for double-click and Enter editing. The host SHALL still validate EditText's exact base, current lock state and application authorization.
+
+
+### Requirement: DCE-6 caret visibility in a partially clipped card
+
+The inline editor SHALL use the intersection of the full card body and the current native clip as its real two-axis scroll viewport. The full card width SHALL remain the text layout width: clipping SHALL NOT rewrite card geometry, move the Canvas camera, change zoom or reflow text to the visible fragment. Native text, selection, local Undo and IME SHALL retain the same editor identity.
+
+#### Scenario: A viewport edge clips the active card
+- **WHEN** the card crosses the left, right, top or bottom viewport edge
+- **THEN** native caret movement, typing and composition SHALL scroll the local text viewport to reveal the primary caret, where the visible area can contain it
+- **AND** changing the clipping geometry alone SHALL reveal the existing primary caret without requiring another edit
+- **AND** the actual rendered text and native platform caret bounds SHALL describe that same geometry; platform output SHALL NOT be clamped or fabricated.
+
+An empty intersection SHALL NOT mount or acquire native input. Ordinary manual scrolling SHALL remain possible; unchanged geometry without text or selection movement SHALL NOT continuously force the caret into view. Native regression evidence SHALL include long unbroken and wrapped text, all four clipping directions, keyboard selection and composition, with unchanged canonical geometry.
