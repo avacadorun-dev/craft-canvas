@@ -1,3 +1,4 @@
+//! Synthetic versioned-port codec, preservation and capacity contracts.
 use craft_canvas_model::{
     CanvasCommand, CanvasDocument, CanvasError, CanvasLimits, CanvasSession, CanvasTransaction,
     ConnectorEndpointKind, EdgeRecord, ExtensionStatus, NodeRecord, PortBinding, PortEndpoint,

@@ -11,3 +11,7 @@ Independent source review: PASS, no blocking findings, reviewer `cc01_final_revi
 Exact correction `f431e24782f4ca464a7516a711d3bd0974632e05` passed [hosted qualification42628265941](https://github.com/avacadorun-dev/craft-canvas/actions/runs/42628265941): committed lock, Rust1.95 formatting, workspace tests and strict Clippy on macOS, Windows and Ubuntu. No native observation is applicable to this headless policy correction.
 
 The public named-port contract and all other CC-02 acceptance criteria remain pending. Native drag interaction belongs to CC-03 and cannot be inferred from this model correction.
+
+## Named-port candidate qualification
+
+Candidate `02337e0ecf9eb9c05da2c603452dbb4259bea2d0` implements the reviewed codec, pure validation, guarded mutation paths and headless example. Independent source/API review is recorded in CC02_REVIEW.md. Hosted run42631366907 reached successful library compilation but refused the new `ports_codec` test crate because its crate-level documentation was missing. This is failed qualification, not passed tests. The subsequent correction adds that documentation only; all test assertions and production code are unchanged. The corrected exact candidate must pass the complete hosted workflow before issue closure.
