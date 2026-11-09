@@ -1,5 +1,6 @@
 - [x] Audit original double-click/textarea/blur/Cmd-Enter/Escape behavior.
 - [x] Implement embedded native input and exact submitted-source acknowledgement.
 - [x] Add native event and model acknowledgement/stale/local-history contracts.
+- [x] Implement first-mounted-frame native focus and add regressions for provisional card input, insertion acknowledgement, cancel intent and atomic draft preservation (source authored; hosted execution pending).
 - [ ] Pass exact-source all-platform hosted Rust tests/fmt/strict Clippy.
 - [ ] Qualify host checkpoint/retry/new-card focus/dirty navigation and actual compiled native editing.

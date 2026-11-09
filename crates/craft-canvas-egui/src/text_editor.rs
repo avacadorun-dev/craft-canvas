@@ -184,6 +184,11 @@ impl TextCardEditor {
     /// Local selection, clipboard and Undo remain TextEdit-owned at the actual card zoom.
     /// IME composition and losing OS focus never become Done/Cancel or a board shortcut.
     pub fn show_inline(&mut self, ui: &mut Ui, rect: egui::Rect, zoom: f64) -> InlineTextOutput {
+        let initial_focus = std::mem::take(&mut self.focus);
+        if initial_focus {
+            // A newly mounted card can already have typing in this frame's event queue.
+            ui.memory_mut(|memory| memory.request_focus(self.id));
+        }
         let zoom = if zoom.is_finite() && zoom > 0.0 {
             zoom
         } else {
@@ -242,11 +247,12 @@ impl TextCardEditor {
                 )
             })
             .inner;
-        if self.focus {
+        if initial_focus {
+            // The creating toolbar/board click must not take focus back from this card.
             response.request_focus();
-            self.focus = false;
         }
-        let deliberate_blur = !composing
+        let deliberate_blur = !initial_focus
+            && !composing
             && response.lost_focus()
             && ui.input(|input| input.focused && input.pointer.primary_pressed());
         InlineTextOutput {

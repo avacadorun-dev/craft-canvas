@@ -394,7 +394,7 @@ fn pending_surface_should_use_the_real_card_host_without_mutating_canonical_or_e
 -> TestResult {
     struct Host {
         editor: TextCardEditor,
-        typed: bool,
+        output: InlineTextOutput,
     }
     impl craft_canvas_egui::CanvasViewHost for Host {
         fn pending_text_editor(&self) -> Option<&TextCardEditor> {
@@ -411,21 +411,28 @@ fn pending_surface_should_use_the_real_card_host_without_mutating_canonical_or_e
                 return Default::default();
             }
             let output = self.editor.show_inline(ui, rect, zoom);
-            self.typed |= output.changed;
-            output.input
+            let input = output.input;
+            self.output = output;
+            input
         }
     }
     let session = session()?;
     let before = session.document().raw_json().to_owned();
     let mut host = Host {
         editor: TextCardEditor::pending_insertion(&session, pending_node(&session)?)?,
-        typed: false,
+        output: InlineTextOutput::default(),
     };
     let mut view = craft_canvas_egui::CanvasView::default();
     let ctx = Context::default();
-    for (index, events) in [vec![], vec![Event::Text("Next frame".into())]]
-        .into_iter()
-        .enumerate()
+    // No bootstrap paint: CreateText can mount its native input one frame after the intent.
+    // Withholding acknowledgement also exercises a retained draft during a save failure.
+    for (index, events) in [
+        vec![Event::Text("Next frame".into())],
+        vec![Event::Text(" before acknowledgement".into())],
+        vec![key(Key::Escape, Modifiers::NONE)],
+    ]
+    .into_iter()
+    .enumerate()
     {
         let mut full = ctx.run_ui(
             RawInput {
@@ -457,9 +464,166 @@ fn pending_surface_should_use_the_real_card_host_without_mutating_canonical_or_e
             },
         );
         full.textures_delta.clear();
+        assert!(host.output.input.keyboard_captured);
+        assert!(!host.output.done_requested);
+        assert_eq!(host.output.cancelled, index == 2);
+        if index == 0 {
+            assert_eq!(host.editor.text(), "Next frame");
+        }
     }
-    assert!(host.typed);
-    assert_eq!(host.editor.text(), "Next frame");
+    assert_eq!(host.editor.text(), "Next frame before acknowledgement");
+    assert!(host.editor.awaits_insertion());
+    assert!(host.editor.submit().is_err());
     assert_eq!(session.document().raw_json(), before);
+    Ok(())
+}
+
+#[test]
+fn creating_pointer_should_keep_initial_card_focus_without_requesting_done() -> TestResult {
+    let session = session()?;
+    let mut editor = TextCardEditor::pending_insertion(&session, pending_node(&session)?)?;
+    let ctx = Context::default();
+    let pos = Pos2::new(600., 20.);
+    let output = frame(
+        &ctx,
+        &mut editor,
+        vec![
+            Event::PointerMoved(pos),
+            Event::PointerButton {
+                pos,
+                button: egui::PointerButton::Primary,
+                pressed: true,
+                modifiers: Modifiers::NONE,
+            },
+        ],
+        0.,
+        true,
+        1.,
+    );
+    assert!(output.input.keyboard_captured);
+    assert!(!output.done_requested);
+    assert!(!output.cancelled);
+    frame(
+        &ctx,
+        &mut editor,
+        vec![
+            Event::PointerButton {
+                pos,
+                button: egui::PointerButton::Primary,
+                pressed: false,
+                modifiers: Modifiers::NONE,
+            },
+            Event::Text("Immediately after creation".into()),
+        ],
+        1.,
+        true,
+        1.,
+    );
+    assert_eq!(editor.text(), "Immediately after creation");
+    Ok(())
+}
+
+#[test]
+fn first_mounted_ime_selection_should_survive_exact_insertion_acknowledgement() -> TestResult {
+    let mut session = session()?;
+    let mut editor = TextCardEditor::pending_insertion(&session, pending_node(&session)?)?;
+    let ctx = Context::default();
+    let output = frame(
+        &ctx,
+        &mut editor,
+        vec![
+            Event::Text("Selected source 🪶".into()),
+            key(Key::A, Modifiers::COMMAND),
+            Event::Ime(egui::ImeEvent::Preedit {
+                text: "にほん".into(),
+                active_range_chars: Some(0..3),
+            }),
+            key(Key::Enter, Modifiers::COMMAND),
+            key(Key::Escape, Modifiers::NONE),
+        ],
+        0.,
+        true,
+        1.,
+    );
+    assert!(output.composing && output.input.keyboard_captured);
+    assert!(!output.done_requested && !output.cancelled);
+    assert_eq!(editor.text(), "にほん");
+    session.apply(insert_pending(&session, pending_node(&session)?)?)?;
+    editor.acknowledge_insertion(&session)?;
+    let output = frame(&ctx, &mut editor, vec![], 1., true, 1.);
+    assert!(output.composing && output.input.keyboard_captured);
+    assert_eq!(editor.text(), "にほん");
+    frame(
+        &ctx,
+        &mut editor,
+        vec![Event::Ime(egui::ImeEvent::Commit("日本語".into()))],
+        2.,
+        true,
+        1.,
+    );
+    // Commit replaces the same retained preedit range instead of appending or losing text.
+    assert_eq!(editor.text(), "日本語");
+    let output = frame(
+        &ctx,
+        &mut editor,
+        vec![key(Key::Enter, Modifiers::COMMAND)],
+        3.,
+        true,
+        1.,
+    );
+    assert!(output.done_requested && !output.composing);
+    assert_eq!(
+        session.document().node("pending").ok_or("pending")?.body(),
+        ""
+    );
+    Ok(())
+}
+
+#[test]
+fn pending_draft_preservation_should_prepare_original_insert_and_latest_edit_atomically()
+-> TestResult {
+    let session = session()?;
+    let before = session.document().raw_json().to_owned();
+    let mut editor = TextCardEditor::pending_insertion(&session, pending_node(&session)?)?;
+    *editor.text_mut() = "Latest unacknowledged 日本語 e\u{301} 🪶".into();
+    let pending = editor.pending_node(&session).ok_or("pending draft")?;
+    let preserved = session.prepare(
+        CanvasTransaction::new(
+            editor.base(),
+            vec![
+                CanvasCommand::InsertNode {
+                    node: NodeRecord::parse(pending.raw_json(), session.limits())?,
+                    index: session.document().nodes().len(),
+                },
+                CanvasCommand::EditText {
+                    node_id: editor.node_id().into(),
+                    expected: pending.body().into(),
+                    text: editor.text().into(),
+                },
+            ],
+        ),
+        &StandardDialect,
+    )?;
+    let roundtrip = CanvasDocument::parse(preserved.document().raw_json(), session.limits())?;
+    assert_eq!(
+        roundtrip.node("pending").ok_or("pending")?.body(),
+        editor.text()
+    );
+    assert_eq!(roundtrip.nodes()[0].id(), "a");
+    assert_eq!(roundtrip.nodes()[1].id(), "pending");
+    assert!(
+        roundtrip
+            .node("pending")
+            .ok_or("pending")?
+            .raw_json()
+            .contains("\"future\":{\"preserve\":9007199254740993}")
+    );
+    assert_eq!(
+        roundtrip.node("a").ok_or("a")?.raw_json(),
+        session.document().node("a").ok_or("a")?.raw_json()
+    );
+    assert_eq!(session.document().raw_json(), before);
+    assert!(editor.awaits_insertion() && editor.dirty());
+    assert!(editor.submit().is_err());
     Ok(())
 }
