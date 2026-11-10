@@ -110,7 +110,7 @@ impl Harness {
             time: 0.0,
         })
     }
-    fn frame(&mut self, events: Vec<Event>) -> Result<CanvasViewOutput> {
+    fn frame(&mut self, mut events: Vec<Event>) -> Result<CanvasViewOutput> {
         self.time += 1.0;
         self.host.bodies.clear();
         let mut output = None;
@@ -123,12 +123,13 @@ impl Harness {
                 _ => None,
             })
             .unwrap_or_default();
+        // egui tracks held modifiers through events, including the later reset to NONE.
+        events.insert(0, Event::ModifiersChanged(modifiers));
         let mut full = self.ctx.run_ui(
             RawInput {
                 screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1000., 680.))),
                 focused: true,
                 time: Some(self.time),
-                modifiers,
                 events,
                 ..RawInput::default()
             },
