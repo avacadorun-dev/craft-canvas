@@ -9,6 +9,23 @@ use craft_canvas_model::{
 use egui::{Pos2, Rect, Vec2};
 use std::collections::HashMap;
 
+pub(crate) fn node_visible(session: &CanvasSession, dialect: &dyn CanvasDialect, id: &str) -> bool {
+    session
+        .document()
+        .node(id)
+        .is_some_and(|node| !dialect.node_interaction(node).hidden)
+}
+
+pub(crate) fn edge_visible(
+    session: &CanvasSession,
+    dialect: &dyn CanvasDialect,
+    edge: &EdgeRecord,
+) -> bool {
+    !dialect.edge_interaction(edge).hidden
+        && node_visible(session, dialect, edge.from_node())
+        && node_visible(session, dialect, edge.to_node())
+}
+
 /// Current-frame measured geometry for an existing canonical named identity.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PortAnchor {
@@ -130,6 +147,9 @@ impl PortFrame {
         let world_clip = frame.world_rect(frame.config.clip);
         for (order, node) in session.document().nodes().iter().enumerate() {
             work.charge(1)?;
+            if dialect.node_interaction(node).hidden {
+                continue;
+            }
             let bounds = preview_bounds(node);
             if ![bounds.x, bounds.y, bounds.width, bounds.height]
                 .into_iter()
@@ -215,10 +235,9 @@ impl PortFrame {
         }
         // Canonical node/port order also determines deterministic painted-handle ties.
         for node in session.document().nodes() {
-            let derived = frame
-                .nodes
-                .get(node.id())
-                .ok_or_else(|| CanvasError::NotFound(node.id().into()))?;
+            let Some(derived) = frame.nodes.get(node.id()) else {
+                continue;
+            };
             let order = derived.order;
             let mut entries = Vec::with_capacity(4 + node.ports().len());
             for (side, anchor) in Side::ALL.into_iter().zip(derived.legacy) {

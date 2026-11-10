@@ -1,7 +1,7 @@
 //! Owned native connection gestures and exact, nonauthoritative submission receipts.
 use crate::{
     CanvasViewHost,
-    port_geometry::{PortFrame, VisibleReconnectHandle, hit_port},
+    port_geometry::{PortFrame, VisibleReconnectHandle, edge_visible, hit_port, node_visible},
 };
 use craft_canvas_model::{
     Camera, CanvasCommand, CanvasDialect, CanvasError, CanvasSession, CanvasTransaction,
@@ -437,6 +437,7 @@ impl ConnectionController {
             }
             if pending.context.board == input.board_id
                 && pending.context.base.same_session(input.session.identity())
+                && pending_visible(&input, &pending.request)
             {
                 let mut preview = pending.preview.clone();
                 preview.state = ConnectionPreviewState::Pending(pending.state.clone());
@@ -570,7 +571,9 @@ impl ConnectionController {
         if let Some(capture) = &self.capture {
             output.preview = capture.preview.clone();
         }
-        if let Some(pending) = &self.pending {
+        if let Some(pending) = &self.pending
+            && pending_visible(&input, &pending.request)
+        {
             output.preview = Some(pending.preview.clone());
         }
         output
@@ -609,6 +612,17 @@ impl ConnectionController {
             Some(ConnectionCancelReason::CameraChanged)
         } else if input.options != Some(&context.options) {
             Some(ConnectionCancelReason::GenerationChanged)
+        } else if !node_visible(input.session, input.dialect, &capture.origin.node_id)
+            || capture
+                .target
+                .as_ref()
+                .is_some_and(|target| !node_visible(input.session, input.dialect, &target.node_id))
+            || matches!(&capture.kind, CaptureKind::Reconnect { edge_id, .. }
+            if !input.session.document().edge(edge_id).is_some_and(|edge| {
+                edge_visible(input.session, input.dialect, edge)
+            }))
+        {
+            Some(ConnectionCancelReason::GeometryUnavailable)
         } else {
             None
         }
@@ -989,6 +1003,19 @@ impl ConnectionController {
         self.pending = None;
         Ok(())
     }
+}
+fn pending_visible(input: &ConnectionInput<'_>, request: &ConnectionRequest) -> bool {
+    node_visible(input.session, input.dialect, &request.from.node_id)
+        && node_visible(input.session, input.dialect, &request.to.node_id)
+        && match &request.operation {
+            ConnectionOperation::Create { .. } => true,
+            ConnectionOperation::Reconnect { edge_id, .. }
+            | ConnectionOperation::ReconnectBoth { edge_id } => input
+                .session
+                .document()
+                .edge(edge_id)
+                .is_some_and(|edge| edge_visible(input.session, input.dialect, edge)),
+        }
 }
 fn available_position(input: &ConnectionInput<'_>, pos: Pos2) -> bool {
     pos.is_finite()

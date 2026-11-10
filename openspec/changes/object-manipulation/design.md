@@ -19,3 +19,7 @@ Owned code for this increment: crates/craft-canvas-egui/src/view.rs plus focused
 Retain existing144 tests and add only regressions for the discovered takeover/release defect: move/resize refusal and clean recovery, representative explicit ownership channels, stationary/ordered exclusion plus post-release isolation. Assert original canonical bytes/history and absence of stale transactions. Hosted fmt/tests/strict Clippy run on Linux/macOS/Windows; no local Cargo. This does not claim touch/IME physical-device acceptance.
 
 Following increments complete selection/observable lifecycle, compatible geometry and sizing policies, nested parents/group/frame transforms, layered hits and drop insertion. The detailed APIs and native journeys must be reviewed before implementation. The issue stays open through integrated native acceptance and the final complete-criterion audit.
+
+## Increment 2 — selection and deletion policy
+
+The additive [selection policy contract](selection-policy.md) specifies compatible per-node/edge flags, current/original-envelope atomic removal guards, one visibility/selection rule, marquee inclusion and selection-change observations. It adds no stored schema. Independent review precedes its implementation; full geometry lifecycle and transforms remain subsequent CC-04 increments.

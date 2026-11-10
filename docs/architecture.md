@@ -1,5 +1,9 @@
 # Architecture decisions
 
+## ADR 010 — independent interaction and atomic deletion policies
+
+Selected2026-11-10 for CC-04 after independent design review. Add defaulted node/edge interaction policy hooks without changing NodePolicy literals or interpreting new stored fields. Visibility and selectability affect the native projection; movement remains independently permitted. Wrapper focus does not own embedded native body input. Forward removal validates the complete current removal closure against both original and current record policies, refusing protected incident edges atomically; unchanged exact history and host authorization remain separate. The [increment contract](../openspec/changes/object-manipulation/selection-policy.md) defines hidden capture/pending presentation, compatible defaults and observable filtered selection. No consumer adoption or full native acceptance follows from this decision.
+
 ## ADR 009 — reuse manipulation authority in bounded increments
 
 Selected2026-11-10 for CC-04. Preserve the existing exact-base Translate/SetGeometry commands, spatial-group/frame distinction and disposable native previews. Correct explicit host/overlay takeover in the existing ordered primary-cycle input path before extending transform policies. Takeover terminates a transient operation; it cannot leave a paused drag that revives after release. This first correction adds no schema or public API and leaves pan/outside-viewport policy unchanged. Full selection/lifecycle, geometry and nested-parent decisions remain mandatory reviewed increments under [the CC-04 design](../openspec/changes/object-manipulation/design.md).

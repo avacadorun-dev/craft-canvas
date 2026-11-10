@@ -35,3 +35,21 @@ This qualifies the private ownership correction's source checks; it is not compl
 The separate [exact pinned dependency audit](CC04_PINNED_RESIZE_DEFAULTS.md) resolves ambiguity1 in the preceding source report. Official React12.11.2/system0.0.79 release archives match both registry and the original lockfile SHA-512 before extraction. The audit establishes eight controls, opposite anchoring, free aspect without a Shift toggle, top-left origin, grid-before-floored-delta behavior and size/extent constraints. It finds no explicit rollback guarantee to copy; the native contract retains explicit guarded cancellation. Original report SHA256: `3045fd4aa168e94c341df8d60ce71d72d4fd605b55993875a5cd91573793be99`. No installation/build or actual browser/native gesture was performed for this read-only research.
 
 This evidence-only update changes no Rust source; the tested implementation identity remains fa4cf13. Further native/API work stays within CC-04, with full issue acceptance pending.
+
+## Increment 2 — policy contract reviewed
+
+Independent review approved [selection-policy.md](../openspec/changes/object-manipulation/selection-policy.md) before Rust edits. Defaulted node/edge policy hooks preserve all current defaults, including unknown-record selection/removal and existing NodePolicy literals. Removal must check both original and current records, including protected incident edges, before any candidate deletion. Native visibility/selectability use one derived rule; wrapper focus stays separate from embedded controls.
+
+Review clarified two concrete cases: directly dragging a nonselectable node uses that node as the sole explicit root while preserving ordinary spatial expansion; and newly hidden targets must invalidate unsubmitted geometry/connection capture independently of selection. Pending connection preview can disappear while its exact request/receipt/acknowledgement stays retained. Empty initial selection is already reported, so the new change observation emits only differing filtered sets.
+
+One implementation agent owns the model hooks/removal and focused tests; another owns adapter projection/input and its focused tests. Files are disjoint and both belong to #4. Root owns integration and hosted dispatch; the independent reviewer will inspect the frozen combined increment. Full geometry lifecycle, size/parent transforms and native complete-issue acceptance remain pending.
+
+## Increment 2 — implementation ready for review
+
+The resumed model/adapter work is integrated without resetting the retained draft. Model hooks and atomic removal checks have independent source approval. Four grouped model regressions cover original/current protection, incident/self-loop veto, separate accepted unlock, newly protected records, reconnect-away survivors, unknown/default compatibility and exact raw/history preservation.
+
+The adapter adds shared derived visibility, per-frame filtered selection, independent nonselectable movement, wrapper focus, marquee inclusion and change-only selection snapshots. Unsubmitted captures cancel on relevant policy/visibility loss; hidden pending previews retain request/receipt/acknowledgement authority. Thirteen focused egui-event regressions cover these paths. A concrete old focus-ordering defect was also corrected: wrapper focus gain must not replace the current set before a Shift/Command pointer toggle.
+
+Direct formatting and whitespace checks pass. The combined adapter diff is frozen for independent review; hosted execution and complete native acceptance remain pending. No dependency, stored schema, consumer pin or user preview changed. Crate guides distinguish the accepted d2bdaec source pin from these active development APIs.
+
+The independent combined source review found no remaining blocking findings and approved exact hosted qualification. It checked visibility and hit consistency, direct drag roots/spatial membership, cancellation and retained pending authority, change observations and additive-focus ordering. This accepts source readiness only; the new regressions have not yet executed and no complete native CC-04 acceptance is claimed.

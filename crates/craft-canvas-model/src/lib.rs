@@ -52,7 +52,7 @@ pub enum CanvasError {
     /// A command's exact base is stale or belongs to another session.
     #[error("The Canvas changed; prepare this operation again")]
     StaleBase,
-    /// A known edit would alter a host-constrained or unsupported node.
+    /// A known edit would alter a host-constrained or unsupported record.
     #[error("Canvas record is not editable in this operation: {0}")]
     NotEditable(String),
     /// No complete Undo or Redo operation is available.
@@ -74,10 +74,20 @@ pub enum CanvasError {
 /// Result of a bounded Canvas operation.
 pub type Result<T> = std::result::Result<T, CanvasError>;
 
-/// Host-supplied semantic geometry policy. It performs no I/O or mutation.
+/// Host-supplied semantic interaction and geometry policy. It performs no I/O or mutation.
 pub trait CanvasDialect {
     /// Determine which generic geometric edits may act on a preserved record.
     fn node_policy(&self, node: &NodeRecord) -> NodePolicy;
+    /// Independent presentation and forward-removal policy for a preserved node.
+    /// Defaults also apply to unknown kinds; no stored field is interpreted automatically.
+    fn node_interaction(&self, _node: &NodeRecord) -> NodeInteractionPolicy {
+        NodeInteractionPolicy::default()
+    }
+    /// Independent presentation and forward-removal policy for a preserved edge.
+    /// No stored field is interpreted automatically by the default implementation.
+    fn edge_interaction(&self, _edge: &EdgeRecord) -> EdgeInteractionPolicy {
+        EdgeInteractionPolicy::default()
+    }
     /// Whether this canonical element may participate in a new/reconnected edge.
     /// Hosts exclude drawing strokes or other source-specific nonconnectable elements.
     fn can_connect(&self, node: &NodeRecord) -> bool {
@@ -131,6 +141,49 @@ pub struct NodePolicy {
     pub resizable: bool,
     /// Enclosure behavior, separate from visible node kind.
     pub group: GroupBehavior,
+}
+/// Independent node interaction flags, without changing canonical records or geometry policy.
+/// These flags do not grant resource authority or recheck exact history restoration and Apply.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct NodeInteractionPolicy {
+    /// Whether the visible node may enter the native board selection.
+    pub selectable: bool,
+    /// Whether a forward removal may delete this record, independently of visibility.
+    pub deletable: bool,
+    /// Whether the board wrapper accepts keyboard focus; embedded host controls are separate.
+    pub focusable: bool,
+    /// Whether the native board omits this node and its incident edges from presentation.
+    pub hidden: bool,
+}
+impl Default for NodeInteractionPolicy {
+    fn default() -> Self {
+        Self {
+            selectable: true,
+            deletable: true,
+            focusable: true,
+            hidden: false,
+        }
+    }
+}
+/// Independent edge interaction flags, without changing canonical records.
+/// These flags do not grant resource authority or recheck exact history restoration and Apply.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct EdgeInteractionPolicy {
+    /// Whether the visible edge may enter the native board selection.
+    pub selectable: bool,
+    /// Whether a forward removal may delete this record, including incident-edge removal.
+    pub deletable: bool,
+    /// Whether the native board omits this edge from presentation.
+    pub hidden: bool,
+}
+impl Default for EdgeInteractionPolicy {
+    fn default() -> Self {
+        Self {
+            selectable: true,
+            deletable: true,
+            hidden: false,
+        }
+    }
 }
 /// Standard JSON Canvas semantics without application extension interpretation.
 #[derive(Default)]

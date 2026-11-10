@@ -12,5 +12,6 @@ pub use port_geometry::{PortAnchor, VisiblePortGeometry, VisibleReconnectHandle}
 pub use text_editor::{InlineTextOutput, TextCardEditor, TextEditorOutput};
 pub use view::{
     CanvasIntent, CanvasView, CanvasViewConfig, CanvasViewHost, CanvasViewLabels, CanvasViewOutput,
-    CanvasViewStyle, NodeBodyResponse, PlainTextBody, VisibleEdgeGeometry, VisibleNodeGeometry,
+    CanvasViewStyle, NodeBodyResponse, PlainTextBody, SelectionChange, SelectionMode,
+    VisibleEdgeGeometry, VisibleNodeGeometry,
 };

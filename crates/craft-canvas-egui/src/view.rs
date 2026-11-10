@@ -6,6 +6,7 @@ use crate::connection::{
 };
 use crate::port_geometry::{
     PortAnchor, PortFrame, PortFrameConfig, VisiblePortGeometry, VisibleReconnectHandle,
+    edge_visible,
 };
 use craft_canvas_model::{
     Camera, CanvasCommand, CanvasDialect, CanvasError, CanvasSession, CanvasTransaction,
@@ -97,6 +98,8 @@ pub struct CanvasViewConfig {
     pub input_ownership: CanvasInputOwnership,
     /// Current-frame overlay rectangles excluded from board input.
     pub input_exclusions: Vec<Rect>,
+    /// Canonical node bounds included by a marquee gesture.
+    pub selection_mode: SelectionMode,
 }
 impl CanvasViewConfig {
     /// Create a host-themed configuration; callers replace labels from their locale catalog.
@@ -110,8 +113,35 @@ impl CanvasViewConfig {
             connections: None,
             input_ownership: CanvasInputOwnership::default(),
             input_exclusions: Vec::new(),
+            selection_mode: SelectionMode::default(),
         }
     }
+}
+/// Inclusion rule for canonical node bounds during marquee selection.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum SelectionMode {
+    /// Include any node whose bounds intersect the marquee, including its boundary.
+    #[default]
+    Intersect,
+    /// Include a node only when the marquee encloses its complete bounds.
+    Contain,
+}
+impl SelectionMode {
+    fn includes(self, marquee: WorldRect, node: WorldRect) -> bool {
+        match self {
+            Self::Intersect => marquee.intersects(node),
+            Self::Contain => marquee.encloses(node),
+        }
+    }
+}
+/// Changed presentation selection after current-frame policy filtering and input.
+/// This observation grants no mutation or persistence authority.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SelectionChange {
+    /// Canonical identity at which this selection was observed.
+    pub base: ContentIdentity,
+    /// Final stable visible and selectable identities.
+    pub selection: Selection,
 }
 /// Native media/text body result; interactive host controls retain their input ownership.
 #[derive(Clone, Copy, Debug, Default)]
@@ -268,6 +298,8 @@ pub struct CanvasViewOutput {
     pub consumed_input: CanvasInputOwnership,
     /// The exact camera used by this frame's paint, hits and observations.
     pub frame_camera: Camera,
+    /// Changed filtered selection; the initial empty set and unchanged frames emit None.
+    pub selection_change: Option<SelectionChange>,
 }
 struct MoveGesture {
     base: ContentIdentity,
@@ -275,6 +307,7 @@ struct MoveGesture {
     delta: WorldPoint,
     selected: Vec<String>,
     expanded: BTreeSet<String>,
+    hidden_members: BTreeSet<String>,
 }
 struct ResizeGesture {
     base: ContentIdentity,
@@ -366,6 +399,7 @@ fn geometry_pointer_frame(
 pub struct CanvasView {
     camera: Camera,
     selection: Selection,
+    reported_selection: Selection,
     base: Option<ContentIdentity>,
     gesture: Option<Gesture>,
     geometry_pointer: Option<Pos2>,
@@ -388,7 +422,8 @@ impl CanvasView {
     pub fn selection(&self) -> &Selection {
         &self.selection
     }
-    /// Select explicit stable identities; absent IDs are removed on the next frame.
+    /// Select explicit stable identities; absent, hidden and nonselectable IDs are filtered
+    /// and any resulting selection change is reported on the next frame.
     pub fn set_selection(&mut self, selection: Selection) {
         self.connection
             .cancel(ConnectionCancelReason::SelectionChanged);
@@ -509,6 +544,12 @@ impl CanvasView {
             &self.gesture,
             Some(Gesture::Move(_) | Gesture::Resize(_) | Gesture::Marquee { .. })
         );
+        let selection_filtered = self.filter_selection(session, dialect);
+        let geometry_policy_cancelled =
+            geometry_active && (selection_filtered || !self.geometry_available(session, dialect));
+        if geometry_policy_cancelled {
+            self.gesture = None;
+        }
         let geometry_input = ui.input(|input| {
             geometry_pointer_frame(
                 &input.events,
@@ -556,6 +597,15 @@ impl CanvasView {
             .map(AsRef::as_ref)
             .chain(pending.iter().map(AsRef::as_ref))
         {
+            let interaction = dialect.node_interaction(node);
+            let wrapper_id = config.id.with(("node", node.id()));
+            if interaction.hidden || !interaction.focusable {
+                // Only the board wrapper loses focus; a nested native editor keeps its ID.
+                ui.memory_mut(|memory| memory.surrender_focus(wrapper_id));
+            }
+            if interaction.hidden {
+                continue;
+            }
             let bounds = self.preview_bounds(node);
             if !bounds.intersects(world_view) {
                 continue;
@@ -591,8 +641,12 @@ impl CanvasView {
             );
             let node_response = ui.interact(
                 rect.intersect(viewport),
-                config.id.with(("node", node.id())),
-                Sense::click_and_drag(),
+                wrapper_id,
+                if interaction.focusable {
+                    Sense::click_and_drag()
+                } else {
+                    Sense::CLICK | Sense::DRAG
+                },
             );
             node_response.widget_info(|| {
                 WidgetInfo::selected(
@@ -616,7 +670,7 @@ impl CanvasView {
             } else {
                 node_response
             };
-            if node_response.gained_focus() {
+            if interaction.selectable && node_response.gained_focus() {
                 focused_node = Some(node.id().to_owned());
             }
             node_focus |= node_response.has_focus();
@@ -689,8 +743,14 @@ impl CanvasView {
                 PortFrame::empty(geometry_config)
             }
         };
-        let (painted_edges, edge_shapes) =
-            self.derive_edges(session, &port_frame, config, &mut work, &mut errors);
+        let (painted_edges, edge_shapes) = self.derive_edges(
+            session,
+            dialect,
+            &port_frame,
+            config,
+            &mut work,
+            &mut errors,
+        );
         painter.set(edge_shape, egui::Shape::Vec(edge_shapes));
         let mut reconnect_handles = Vec::new();
         if config.connections.is_some() {
@@ -793,15 +853,21 @@ impl CanvasView {
             || (!pan
                 && !matches!(self.gesture, Some(Gesture::Pan))
                 && geometry_input.press.is_some());
-        let geometry_cancelled =
-            (geometry_active && ownership.any()) || (geometry_cycle && geometry_input.excluded);
+        let geometry_cancelled = geometry_policy_cancelled
+            || (geometry_active && ownership.any())
+            || (geometry_cycle && geometry_input.excluded);
         if connection_blocking || geometry_input.interrupted || geometry_cancelled {
             self.gesture = None;
             if geometry_active && geometry_cancelled {
                 // Bodies may already have painted the previous preview before ownership resolved.
                 ui.ctx().request_repaint();
             }
-        } else if let Some(id) = focused_node {
+        } else if let Some(id) = focused_node
+            && !geometry_cycle
+            && !ui.input(|input| input.pointer.primary_down() || input.pointer.primary_released())
+        {
+            // Pointer selection owns its complete modifier/toggle cycle. A wrapper focus
+            // gain in that same cycle must not first replace the selection with one node.
             self.selection = Selection {
                 nodes: BTreeSet::from([id]),
                 edges: BTreeSet::new(),
@@ -888,16 +954,19 @@ impl CanvasView {
                     size,
                 );
                 let additive = ui.input(|input| input.modifiers.shift || input.modifiers.command);
-                if let Some(node) = session.document().hit_node(world) {
-                    if additive {
-                        if !self.selection.nodes.insert(node.id().into()) {
-                            self.selection.nodes.remove(node.id());
+                if let Some(node) = hit_node(session, dialect, world) {
+                    let interaction = dialect.node_interaction(node);
+                    if interaction.selectable {
+                        if additive {
+                            if !self.selection.nodes.insert(node.id().into()) {
+                                self.selection.nodes.remove(node.id());
+                            }
+                        } else if !self.selection.nodes.contains(node.id()) {
+                            self.selection = Selection {
+                                nodes: BTreeSet::from([node.id().into()]),
+                                edges: BTreeSet::new(),
+                            };
                         }
-                    } else if !self.selection.nodes.contains(node.id()) {
-                        self.selection = Selection {
-                            nodes: BTreeSet::from([node.id().into()]),
-                            edges: BTreeSet::new(),
-                        };
                     }
                     let policy = dialect.node_policy(node);
                     let node_rect = screen_rect(self.camera, node.bounds(), viewport);
@@ -913,35 +982,57 @@ impl CanvasView {
                             replacement: node.bounds(),
                             start: world,
                         }));
-                    } else if policy.movable && self.selection.nodes.contains(node.id()) {
-                        let selected: Vec<_> = self.selection.nodes.iter().cloned().collect();
+                    } else if policy.movable
+                        && (!interaction.selectable || self.selection.nodes.contains(node.id()))
+                    {
+                        let selected: Vec<_> = if interaction.selectable {
+                            self.selection.nodes.iter().cloned().collect()
+                        } else {
+                            vec![node.id().to_owned()]
+                        };
                         let mut work = WorkControl::new(session.limits().max_work_units, None);
                         match session
                             .document()
                             .expand_move_selection(&selected, dialect, &mut work)
                         {
                             Ok(expanded) => {
+                                let hidden_members = expanded
+                                    .iter()
+                                    .filter(|id| {
+                                        session.document().node(id).is_some_and(|node| {
+                                            dialect.node_interaction(node).hidden
+                                        })
+                                    })
+                                    .cloned()
+                                    .collect();
                                 self.gesture = Some(Gesture::Move(MoveGesture {
                                     base: session.identity(),
                                     start: world,
                                     delta: WorldPoint::default(),
                                     selected,
                                     expanded,
+                                    hidden_members,
                                 }))
                             }
                             Err(error) => errors.push(error),
                         }
                     }
                 } else if let Some(edge) = hit_edge(&painted_edges, pointer) {
-                    if additive {
-                        if !self.selection.edges.insert(edge.edge_id.clone()) {
-                            self.selection.edges.remove(&edge.edge_id);
+                    if session
+                        .document()
+                        .edge(&edge.edge_id)
+                        .is_some_and(|edge| dialect.edge_interaction(edge).selectable)
+                    {
+                        if additive {
+                            if !self.selection.edges.insert(edge.edge_id.clone()) {
+                                self.selection.edges.remove(&edge.edge_id);
+                            }
+                        } else {
+                            self.selection = Selection {
+                                nodes: BTreeSet::new(),
+                                edges: BTreeSet::from([edge.edge_id.clone()]),
+                            };
                         }
-                    } else {
-                        self.selection = Selection {
-                            nodes: BTreeSet::new(),
-                            edges: BTreeSet::from([edge.edge_id.clone()]),
-                        };
                     }
                     self.gesture = None;
                 } else {
@@ -1001,7 +1092,10 @@ impl CanvasView {
                                 .document()
                                 .nodes()
                                 .iter()
-                                .filter(|node| bounds.intersects(node.bounds()))
+                                .filter(|node| {
+                                    node_selectable(node, dialect)
+                                        && config.selection_mode.includes(bounds, node.bounds())
+                                })
                                 .map(|node| node.id().to_owned()),
                         );
                         painter.rect_stroke(
@@ -1065,7 +1159,7 @@ impl CanvasView {
                     point(pointer.x - viewport.left(), pointer.y - viewport.top()),
                     size,
                 );
-                if session.document().hit_node(world).is_none()
+                if hit_node(session, dialect, world).is_none()
                     && hit_edge(&painted_edges, pointer).is_none()
                 {
                     intents.push(CanvasIntent::CreateText {
@@ -1091,6 +1185,16 @@ impl CanvasView {
         } else {
             None
         };
+        self.filter_selection(session, dialect);
+        let selection_change = if self.selection != self.reported_selection {
+            self.reported_selection.clone_from(&self.selection);
+            Some(SelectionChange {
+                base: session.identity(),
+                selection: self.selection.clone(),
+            })
+        } else {
+            None
+        };
         CanvasViewOutput {
             response,
             intents,
@@ -1104,6 +1208,40 @@ impl CanvasView {
             connection_events: connection_step.events,
             consumed_input: connection_step.consumed_input,
             frame_camera,
+            selection_change,
+        }
+    }
+    fn filter_selection(&mut self, session: &CanvasSession, dialect: &dyn CanvasDialect) -> bool {
+        let previous_size = self.selection.nodes.len() + self.selection.edges.len();
+        self.selection.nodes.retain(|id| {
+            session
+                .document()
+                .node(id)
+                .is_some_and(|node| node_selectable(node, dialect))
+        });
+        self.selection.edges.retain(|id| {
+            session.document().edge(id).is_some_and(|edge| {
+                edge_visible(session, dialect, edge) && dialect.edge_interaction(edge).selectable
+            })
+        });
+        previous_size != self.selection.nodes.len() + self.selection.edges.len()
+    }
+    fn geometry_available(&self, session: &CanvasSession, dialect: &dyn CanvasDialect) -> bool {
+        match &self.gesture {
+            Some(Gesture::Move(gesture)) => gesture.expanded.iter().all(|id| {
+                session.document().node(id).is_some_and(|node| {
+                    dialect.node_policy(node).movable
+                        && (!dialect.node_interaction(node).hidden
+                            || gesture.hidden_members.contains(id))
+                })
+            }),
+            Some(Gesture::Resize(gesture)) => session
+                .document()
+                .node(&gesture.node_id)
+                .is_some_and(|node| {
+                    !dialect.node_interaction(node).hidden && dialect.node_policy(node).resizable
+                }),
+            _ => true,
         }
     }
     fn keyboard(
@@ -1168,12 +1306,17 @@ impl CanvasView {
                 .document()
                 .nodes()
                 .iter()
+                .filter(|node| node_selectable(node, dialect))
                 .map(|node| node.id().into())
                 .collect();
             self.selection.edges = session
                 .document()
                 .edges()
                 .iter()
+                .filter(|edge| {
+                    edge_visible(session, dialect, edge)
+                        && dialect.edge_interaction(edge).selectable
+                })
                 .map(|edge| edge.id().into())
                 .collect();
         }
@@ -1223,6 +1366,7 @@ impl CanvasView {
     fn derive_edges(
         &self,
         session: &CanvasSession,
+        dialect: &dyn CanvasDialect,
         frame: &PortFrame,
         config: &CanvasViewConfig,
         work: &mut WorkControl<'_>,
@@ -1232,6 +1376,9 @@ impl CanvasView {
         let mut shapes = Vec::new();
         let mut reported = false;
         for edge in session.document().edges() {
+            if !edge_visible(session, dialect, edge) {
+                continue;
+            }
             match frame.edge_geometry(edge, work) {
                 Ok(Some(geometry)) => {
                     let selected = self.selection.edges.contains(edge.id());
@@ -1381,6 +1528,23 @@ impl CanvasView {
             }
         }
     }
+}
+fn node_selectable(node: &NodeRecord, dialect: &dyn CanvasDialect) -> bool {
+    let policy = dialect.node_interaction(node);
+    policy.selectable && !policy.hidden
+}
+fn hit_node<'a>(
+    session: &'a CanvasSession,
+    dialect: &dyn CanvasDialect,
+    world: WorldPoint,
+) -> Option<&'a NodeRecord> {
+    session
+        .document()
+        .nodes()
+        .iter()
+        .rev()
+        .find(|node| !dialect.node_interaction(node).hidden && node.bounds().contains(world))
+        .map(AsRef::as_ref)
 }
 fn hit_edge(edges: &[VisibleEdgeGeometry], pointer: Pos2) -> Option<&VisibleEdgeGeometry> {
     // Nodes are tested first by the caller; among edges, the last painted line wins.

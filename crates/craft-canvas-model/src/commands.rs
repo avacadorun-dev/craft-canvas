@@ -229,6 +229,8 @@ pub enum CanvasCommand {
         label: String,
     },
     /// Remove only selected nodes and selected/incident edges; group members remain.
+    /// Every removed record must be deletable in both its original and current candidate form.
+    /// A protected incident edge refuses the entire transaction before removal.
     RemoveSelection(Selection),
     /// Duplicate selected nodes, enclosed group members and internal connectors.
     Duplicate {
@@ -591,6 +593,32 @@ pub(crate) fn execute(
                         return Err(CanvasError::NotFound(id.clone()));
                     }
                 }
+                let removes_edge = |edge: &EdgeRecord| {
+                    selection.edges.contains(edge.id())
+                        || selection.nodes.contains(edge.from_node())
+                        || selection.nodes.contains(edge.to_node())
+                };
+                work.charge(nodes.len() + edges.len())?;
+                for node in &nodes {
+                    if selection.nodes.contains(node.id())
+                        && (!dialect.node_interaction(node).deletable
+                            || document.node(node.id()).is_some_and(|original| {
+                                !dialect.node_interaction(original).deletable
+                            }))
+                    {
+                        return Err(CanvasError::NotEditable(node.id().into()));
+                    }
+                }
+                for edge in &edges {
+                    if removes_edge(edge)
+                        && (!dialect.edge_interaction(edge).deletable
+                            || document.edge(edge.id()).is_some_and(|original| {
+                                !dialect.edge_interaction(original).deletable
+                            }))
+                    {
+                        return Err(CanvasError::NotEditable(edge.id().into()));
+                    }
+                }
                 work.charge(nodes.len() + edges.len())?;
                 nodes.retain(|node| {
                     if selection.nodes.contains(node.id()) {
@@ -601,10 +629,7 @@ pub(crate) fn execute(
                     }
                 });
                 edges.retain(|edge| {
-                    if selection.edges.contains(edge.id())
-                        || selection.nodes.contains(edge.from_node())
-                        || selection.nodes.contains(edge.to_node())
-                    {
+                    if removes_edge(edge) {
                         mapping.removed_edges.insert(edge.id().into());
                         copied_edges.remove(edge.id());
                         authored_edges.remove(edge.id());

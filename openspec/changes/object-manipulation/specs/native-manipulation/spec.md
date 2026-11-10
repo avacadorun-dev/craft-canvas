@@ -37,3 +37,27 @@ The completed CC-04 issue SHALL provide screen/world placement and bounded drop 
 ### Requirement: Scoped acceptance
 
 CC-04 SHALL retain exact-source hosted qualification and independent compiled manipulation evidence covering overlap/zoom/clipping, cancellation, history and source-valid large coordinates. Partial correction/model-only increments SHALL remain explicitly partial until the full issue and source-backed consumer requirements pass. The existing user-controlled preview SHALL remain intact.
+
+### Requirement: Independent selection and visibility policies
+
+Per-node and per-edge selection, deletion and visibility SHALL have explicit compatible defaults through the host dialect. Node wrapper focusability SHALL be independent of embedded body focus and selectability. Hidden nodes and their incident edges SHALL contribute no native bodies/ports/hits; canonical data SHALL remain unchanged. A visible nonselectable node SHALL remain an input blocker and SHALL be independently movable when its move policy permits, without changing another selection. Marquee SHALL support intersection and complete containment, and the view SHALL report changed filtered stable selections without repeated idle events.
+
+#### Scenario: Select visible editable targets
+- WHEN a board contains visible nonselectable nodes, hidden nodes, protected nodes and incident edges
+- THEN click, additive, marquee, focus-driven and Select All behavior use the same explicit policy
+- AND hiding or disabling selection removes stale retained selection without deleting records
+- AND embedded editor focus remains independent from wrapper focusability
+
+### Requirement: Protected removal is atomic
+
+Forward removal SHALL validate every explicit target and current incident-edge removal against both the current candidate and original canonical record policies before mutation. A refusal SHALL preserve the complete session, history and raw data. A field edit earlier in the same transaction SHALL NOT bypass original deletion protection. Hidden/selectable flags SHALL NOT substitute for deletion authorization.
+
+#### Scenario: Protected incident relation
+- WHEN a selected node has a protected edge that would be removed incidentally
+- THEN the entire removal refuses, including other selected nodes and preceding edits
+- AND no dangling edge or partial deletion is published
+
+#### Scenario: Group membership and exact history
+- WHEN an unprotected spatial group is removed
+- THEN enclosed protected members remain in their original order with exact data
+- AND Undo/Redo retain the existing exact historical restore contract

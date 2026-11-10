@@ -10,7 +10,7 @@ Current baseline: **Rust 1.95**, edition 2024. This crate has no egui dependency
 
 ```toml
 [dependencies]
-craft-canvas-model = { git = "https://github.com/avacadorun-dev/craft-canvas", rev = "99db5166f287831c96da7ba6630a2bb4d620ee4e" }
+craft-canvas-model = { git = "https://github.com/avacadorun-dev/craft-canvas", rev = "d2bdaeca02ca028693222cf16153ff7c34c7b874" }
 ```
 
 Full native React Flow functional parity is the project goal, not a claim about this baseline. The named-port model is qualified in this revision; richer graph relationships and the complete graph API remain under development. Start with the [ordered roadmap](https://github.com/avacadorun-dev/craft-canvas/blob/feature/native-canvas-foundation/docs/ROADMAP.md), [production plan](https://github.com/avacadorun-dev/craft-canvas/blob/feature/native-canvas-foundation/docs/PRODUCTION_PLAN.md) and [parity inventory](https://github.com/avacadorun-dev/craft-canvas/blob/feature/native-canvas-foundation/docs/REACT_FLOW_PARITY.md); moving documentation does not change the pinned code.
@@ -56,6 +56,14 @@ fn main() -> craft_canvas_model::Result<()> {
     Ok(())
 }
 ```
+
+## Interaction policy in the CC-04 development branch
+
+The active CC-04 work adds defaulted `CanvasDialect::node_interaction` and `edge_interaction` hooks. Node policies independently choose selectability, forward deletion, wrapper focus and visibility; edge policies choose selectability, forward deletion and visibility. Existing dialects retain their defaults, including unknown records. `NodePolicy` continues to control movement, resize and spatial-group/frame behavior. No stored field automatically becomes a permission or visibility flag.
+
+`RemoveSelection` checks both original and current candidate records before removing any selected node or selected/incident edge. A protected incident edge refuses the entire transaction; earlier field edits cannot bypass original protection. Group removal retains enclosed members. Exact historical Undo/Redo and prepared Apply keep their existing identity contract; persistent hosts still own authorization and policy-change serialization.
+
+These additions require the development revision recorded in [CC-04 progress](../../docs/CC04_PROGRESS.md); the qualified source pin above predates them. Full issue/native acceptance remains pending.
 
 ## Persistent host contract
 
