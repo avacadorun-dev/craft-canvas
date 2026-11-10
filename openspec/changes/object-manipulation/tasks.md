@@ -4,7 +4,7 @@
 - [x] Independently review the first bounded ownership-correction design (read-only reviewer approved at5442038 before Rust edits).
 - [x] Correct active geometry takeover and add focused regressions for the concrete defect (independent source review passed; exact fa4cf13 hosted checks passed).
 - [x] Qualify the exact correction on hosted Rust checks; keep it partial (fa4cf13, run42669566429,147 tests per platform).
-- [x] Review and implement compatible selection/visibility/removal policies, marquee inclusion and selection-change observations (independent source review approved; hosted qualification pending).
+- [x] Review and implement compatible selection/visibility/removal policies, marquee inclusion and selection-change observations (independent source review approved; exact4ff5641 passed164 tests per platform plus existing29-step native compatibility smoke; complete native issue acceptance pending).
 - [ ] Complete full geometry/selection lifecycle, thresholds and coherent transformed layered hit behavior.
 - [ ] Specify and implement source-compatible size/aspect/origin/extent/snap/rotation policies.
 - [ ] Specify and implement nested parents, spatial groups and independent frames with compatible codec and cycle refusal.
