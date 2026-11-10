@@ -21,17 +21,17 @@ impl CanvasDialect for ProtectedFields {
     }
     fn node_interaction(&self, node: &NodeRecord) -> NodeInteractionPolicy {
         NodeInteractionPolicy {
-            deletable: !node
+            deletable: node
                 .field("protected")
-                .is_some_and(|raw| raw.get() == "true"),
+                .is_none_or(|raw| raw.get() != "true"),
             ..NodeInteractionPolicy::default()
         }
     }
     fn edge_interaction(&self, edge: &EdgeRecord) -> EdgeInteractionPolicy {
         EdgeInteractionPolicy {
-            deletable: !edge
+            deletable: edge
                 .field("protected")
-                .is_some_and(|raw| raw.get() == "true"),
+                .is_none_or(|raw| raw.get() != "true"),
             ..EdgeInteractionPolicy::default()
         }
     }
